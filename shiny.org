@@ -1,0 +1,4 @@
+/home/a/Documents/13_shiny
+* file:shiny.Rhistory
+* file:shiny_scratch.txt
+* file:shiny_scratch.r
