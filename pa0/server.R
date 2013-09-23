@@ -9,8 +9,8 @@ codelist<-list(c0000=list(name='default',comment='Event code c happened',advice=
 
 dir.create('backups');
 
-shinyServer(function(input, output, session) {
-  analyzesession <- !missing(session);
+shinyServer(function(input, output, clientData) {
+  ## analyzesession <- !missing(session);
   ## object to store multiple, independent reactive values
   ## revals <-reactiveValues(log=list(c(event='start',time=as.character(Sys.time()))),issues=list());
   firstlog <- list(); firstlog[[as.character(Sys.time())]]<-c(code='c0000',comment='Starting session.');
@@ -192,7 +192,9 @@ shinyServer(function(input, output, session) {
     revals$ychoices <- isolate(revals$datvars$yvars);
     revals$cchoices <- isolate(revals$datvars$cvars);
     revals$tchoices <- isolate(c(revals$datvars$fvars,revals$datvars$nvars));
+    revals$filename <- tempfile(tmpdir='backups',fileext='.rdata');
   });
+
 
   ## (re)transform ONLY if rawdat, gchosen, tchosen, or schosen change
   observe({
@@ -255,7 +257,6 @@ shinyServer(function(input, output, session) {
     ## }
     ## revals$trndat <- trndat;
     ## ## show the transformed dataset on the page
-    ## cat('Line 222\n');
     ## trndat;
   ## });
 
@@ -292,13 +293,16 @@ shinyServer(function(input, output, session) {
     gchoices <- revals$gchoices;
     if(length(gchoices)>0&&!is.null(revals$ychosen)){
       revals$init$mgvar<-1;
-      cat('Line 258\n');
       list(
         selectInput("gvar","Grouping Variable. This is NOT one of your predictor (X) variables. This is a nuisance variable to correct for. It's especially important that you read the help popup for this one so you can make the right choice.",c(" ",gchoices),selected=revals$gchosen),
         span(class="badge",href="#gvarHelp",`data-toggle`="modal","?")
-        ## TODO: checkbox for multiple groups and LOG
+        ## DONE: checkbox for multiple groups and LOG
         ## LOG if both this and a censoring variable selected
         );} else span("")});
+  output$cgvarmulti <- renderUI(if(length(gvar<-input$gvar)>0&&gvar!=' '){
+    revals$init$cgvarmulti <- 1;
+    checkboxInput('gvarmulti',"Check here to indicate that you have more than one grouping variable.")
+  } else span(""));
 
   output$mxvars <- renderUI({
     xchoices <- revals$xchoices;
@@ -324,9 +328,14 @@ shinyServer(function(input, output, session) {
       revals$init$mtvar<-1;
       list(
         selectInput("tvar","Do any of these variables represent the order in which the data were collected? Your data will be sorted in that order after first sorting by grouping variable, if there is one.",c(" ",tchoices),selected=revals$tchosen),
-              span(class='badge',href="#tvarHelp",`data-toggle`="modal","?")
-        ## TODO: checkbox for multiple orderings
+        span(class='badge',href="#tvarHelp",`data-toggle`="modal","?")
+        ## DONE: checkbox for multiple orderings
         );} else span("")});
+
+  output$ctvarmulti <- renderUI(if(length(tvar<-input$tvar)>0&&tvar!=' '){
+    revals$init$ctvarmulti <- 1;
+    checkboxInput('tvarmulti',"Check here to indicate that you have more than one grouping variable.")
+  } else span(""));
 
   output$mrvars <- renderUI({
     rchoices <- revals$rchoices;
@@ -426,7 +435,6 @@ shinyServer(function(input, output, session) {
       selInp[[1]]$children <- c(selInp[[1]]$children,list(span(class='badge',href='#contHelp',`data-toggle`="modal","?")));
       selInp[[2]]$attribs$style <- 'width: auto';
       revals$init$mcont <- 1;
-      cat('Line 391\n');
       list(selInp,tags$hr());
     } else span("");
   });
@@ -434,6 +442,14 @@ shinyServer(function(input, output, session) {
   
   output$bmodel <- renderUI(if(!is.null(revals$frmcon)) actionButton("model","Run Analysis"));
 
+  output$bfinal <- renderUI(if(!is.null(readyfinal<-revals$readyfinal)&&readyfinal) actionButton("final","Finalize"));
+
+  output$download <- downloadHandler(
+                       filename=function(){gsub('backups/','',revals$filename)},
+                       content=function(file) if(file.exists(revals$filename)) {
+                         system(sprintf('cp %s %s',revals$filename,file))
+                       } else {message<-"No results to save yet."; save(message,file=file)});
+  
 ### functions that read input from variable menus (loggable issues can happen here)
   ## function that constructs a formula, identifies the model type, and creates a cm object (loggable issues can happen here)
   ## modeltype,frm,(rfrm),(frmcon),(cm)
@@ -639,14 +655,20 @@ shinyServer(function(input, output, session) {
           addterms <- try(unique(unlist(sapply(cm[cont],function(ii)
                                                apply(ii[-1,,drop=F],1,function(jj)
                                                      colnames(ii)[jj!=0]),simplify=F))));
-          if(class(addterms)[1]=='try-error') browser();
+          if(class(addterms)[1]=='try-error') {
+            cat('addterms errored out with',class(addterms),'\n');
+            browser();
+          }
           ## convert the coef-format terms to raw-format (model-format) terms
           addterms <- subset(attr(cm,'contrinfo'),raw%in%addterms)$term;
           ## swap out ':' to insure marginality and paste together
           addterms <- paste(gsub(':','*',addterms),collapse='+');
           frmcon <- try(update(frm,as.formula(paste(".~.+",addterms))));
           ## browser();
-          if(class(frmcon)[1]=='try-error') browser() else {
+          if(class(frmcon)[1]=='try-error') {
+            cat('frmcon errored out with',class(frmcon),'\n');
+            browser()
+          } else {
             environment(frmcon) <- NULL;
             cat('update model: ');print(frmcon);
             ## if necessary, update revals$frmcon
@@ -668,10 +690,22 @@ shinyServer(function(input, output, session) {
       }
     }},label='ocont');
 
+  observe({
+    if(!is.null(input$final)&&input$final!=0){
+      log<-do.call(rbind,isolate(relog$log));
+      fits<-isolate(revals$fits);
+      trndat <- isolate(revals$trndat);
+      revals_list<-isolate(reactiveValuesToList(revals));
+      save(log,fits,trndat,revals_list,file=isolate(revals$filename),compress='xz');
+      cat('Saved session!\n');
+    }});
+
+  
 ### model fitting
   ## function that fits the model and does other time-consuming stuff when the user presses a button
   observe({
     if(!is.null(input$model)&&input$model!=0){
+      revals$readyfinal <- F;
       logevent('c0013',sprintf('Researcher indicated readiness to proceed with analysis. So far %d analyses have been attempted on the same data',input$model-1));
       modeltype <- isolate(revals$modeltype);
       frmcon0 <- isolate(revals$frmcon);
@@ -728,6 +762,75 @@ shinyServer(function(input, output, session) {
         cat('======\n fitaic: '); print(summary(fitaic));
        };
     }},label='ofit');
+
+### Observe what the user says about the residuals, etc
+  ## observe(if(length(
+  ##              setdiff(
+  ##                c(input$trend,input$nonlin,input$abstrend,input$absnonlin,input$qqldir,input$qqrdir,input$qqrange),
+  ##                ' '))==8&&length(model<-isolate(input$model))>0&&model>0){
+  ##   cat('Residuals examined\n');
+  ##   logevent('c0040','Researcher answered all questions about residuals.');
+  ##   revals$readyfinal <- T;
+  ## });
+  observe({
+    trend<-input$trend; nonlin<-input$nonlin; abstrend<-input$abstrend; absnonlin<-input$absnonlin;
+    qqrdir<-input$qqrdir; qqldir<-input$qqldir; qqrange<-input$qqrange;
+    allresidin<-c(trend,nonlin,abstrend,absnonlin,qqrdir,qqldir);
+    ## cat('allresidin:',paste(allresidin,collapse=','),'\n');
+    ## cat('qqrange:',paste(qqrange,collapse=','),'\n');
+    ## cat('lengths:',length(setdiff(allresidin,' ')),'and',length(qqrange),'\n');
+    modeltype<-isolate(revals$modeltype);
+    ## cat('modeltype:',modeltype,'\n');
+    if(length(modeltype)>0){
+      if(modeltype=='coxph'){
+        revals$readyfinal <- T; logevent('c0040','Researcher examinde all residual plots');
+      } else {
+        ## if not a cox-ph model, these other residual plots are appropriate
+        if(sum(allresidin!=' ',na.rm=T)==6&&length(qqrange)==2){
+          revals$readyfinal <- T;
+          logevent('c0040','Researcher examined all residual plots');
+        } else revals$readyfinal <- F;
+      }} else revals$readyfinal <- F});
+  
+  observe({trend<-input$trend; model<-isolate(input$model);
+           if(length(model)>0&&model>0&&length(trend)>0&&trend!=' '){
+             logevent('w0030',paste('Researcher feels that the trend in the Pearson residuals is best described as "',trend,'"'))}});
+  
+  observe({nonlin<-input$nonlin; model<-isolate(input$model);
+           if(length(model)>0&&model>0&&length(nonlin)>0)
+             if(nonlin=='Yes') logevent('w0031','Researcher feels that the trend in the Pearson residuals might be nonlinear')});
+
+  observe({
+    abstrend<-input$abstrend; model<-isolate(input$model);
+    if(length(model)>0&&model>0&&length(abstrend)>0&&abstrend!=' ') {
+      logevent('w0032',paste('Researcher feels that the trend in the absolute Pearson residuals is best described as "',abstrend,'"'))}});
+
+  observe({absnonlin<-input$absnonlin; model<-isolate(input$model);
+           if(length(model)>0&&model>0&&length(absnonlin)>0)
+             if(absnonlin=='Yes') logevent('w0031','Researcher feels that the trend in the absolute Pearson residuals might be nonlinear')});
+
+  observe({qqrdir<-input$qqrdir; model<-isolate(input$model);
+           if(length(model)>0&&model>0&&length(qqrdir)>0)
+             logevent('w0034',paste('Researcher feels that the right tail of the Pearson residuals is',
+                                    switch(qqrdir,Above='larger',Below='smaller'),
+                                    'than would be predicted for a normal distribution'))});
+
+  observe({qqldir<-input$qqldir; model<-isolate(input$model);
+           if(length(model)>0&&model>0&&length(qqldir)>0)
+             logevent('w0035',paste('Researcher feels that the left tail of the Pearson residuals is',
+                                    switch(qqldir,Above='smaller',Below='larger'),
+                                    'than would be predicted for a normal distribution'))});
+
+  observe({qqrange<-input$qqrange; model<-isolate(input$model);
+           if(length(model)>0&&model>0&&length(qqrange)==2)
+             logevent('w0036',
+                      sprintf(
+                        'Researcher feels that the left and right tails of the Pearson residuals diverge from normality at roughly the %0.1f and %0.1f standard deviations, respectively.',
+                        qqrange[1],qqrange[2]))});
+          
+  observe(if(!is.null(gvarmulti<-input$gvarmulti)&&gvarmulti) logevent('w0037','This app does not currently support nested random effects, but the researcher indicates that these data do in fact have such a structure.'));
+  observe(if(!is.null(tvarmulti<-input$tvarmulti)&&tvarmulti) logevent('w0038','This app does not currently support multiple time variables, but the researcher indicates that these data do in fact have such a structure.'));
+
   
 ### plotting
   ## functions that generate descriptive plots pre-analysis
@@ -767,7 +870,7 @@ shinyServer(function(input, output, session) {
   });
 
   output$resplotqq <- renderPlot(if(!is.null(fitaic <- revals$fits$fitaic)){
-    hataic <- fitted(fitaic); sqqrange <- input$sqqrange;
+    hataic <- fitted(fitaic); qqrange <- input$qqrange;
     revals$qqrng_temp <- range(qnorm(ppoints(nobs<-length(hataic))));
     revals$nobs <- nobs;
     if(class(fitaic)[1]=='lm') {
@@ -777,7 +880,7 @@ shinyServer(function(input, output, session) {
       residaic <- residuals(fitaic,type='pearson');
       visualres(residaic,hataic,type='qq',ylab='Pearson');
     }
-    if(length(sqqrange)>0) abline(v=sqqrange,col='blue');
+    if(length(qqrange)>0) abline(v=qqrange,col='blue');
   });
 
        ##   output$resacf <- renderImage({
@@ -797,26 +900,29 @@ shinyServer(function(input, output, session) {
        ## }, deleteFile = TRUE)
      
 
-  output$resacf <- renderImage(if(length(revals$tchosen)>0&&(fitclass<-class(fitaic<-revals$fits$fitaic)[1])%in%c('lm','lme')){
+  output$resacf <- renderImage(if(length(isolate(revals$tchosen))>0&&(fitclass<-class(fitaic<-revals$fits$fitaic)[1])%in%c('lm','lme')){
     cat('Starting resacf\n');
     print(fitclass);
     outfile <- tempfile(fileext='.png');
     png(outfile,width=400,height=400);
     acfplot<- switch(fitclass,
            lm =  { residaic <- rstudent(fitaic);
-                   acfplot<-acf(residaic); dev.off(); acfplot;
+                   acfplot<-try(acf(residaic)); dev.off(); acfplot;
                  },
-           lme = ACF(fitaic));
-    dev.set(2);
-    plot(acfplot);
-    print(outfile);
-    dev.off();
-    return(list(src=outfile,alt='Autocorrelation'));
+           lme = try(ACF(fitaic)));
+    if(class(acfplot)[1]!='try-error'){
+      dev.set(2);
+      plot(acfplot);
+      print(outfile);
+      dev.off();
+      return(list(src=outfile,alt='Autocorrelation'));
+    } else return(NULL);
   },deleteFile=T);
 
   ## observe({log<-relog$log;relog$out<-do.call(rbind,log);});
   output$log <- renderTable(do.call(rbind,relog$log));
   output$fileinfo <- renderTable(input$infile);
+  output$debug <- renderText({query<-parseQueryString(clientData$url_search);paste(names(query),query,sep="=",collapse=", ")});
   ## output$mqqslider <- renderUI(if(length(qqrng_temp<-revals$qqrng_temp)>0){
   ## });
   ## functions that plot results
