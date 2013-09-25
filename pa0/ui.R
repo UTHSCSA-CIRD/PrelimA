@@ -16,7 +16,8 @@ shinyUI(pageWithSidebar(
             div("Preliminary Data Analysis"),"Preliminary Analysis"),
           sidebarPanel(
             htmlOutput("bdataread"),htmlOutput("udataread"),
-            downloadLink("download","Copy the URL of this link and keep it in a safe location"),
+            ## downloadLink("download","Copy the URL of this link and keep it in a safe location"),
+            htmlOutput("download"),
             htmlOutput("bfinal"),
             htmlOutput("bmodel"),
             htmlOutput("mcont"),

@@ -6,8 +6,10 @@ codelist<-list(c0000=list(name='default',comment='Event code c happened',advice=
                c0001=list(name='Upload',comment='File uploaded.',advice=NA),
                c0002=list(name='Test data chosen',comment='A built-in R dataset was chosen.'),
                c9999=list(name='logtest',comment='Testing the log system',advice='Test it till it works right'));
-
-dir.create('backups');
+if(!file.exists('www/results')){
+  if(!file.exists('www')) dir.create('www');
+  dir.create('www/results');
+}
 
 shinyServer(function(input, output, clientData) {
   ## analyzesession <- !missing(session);
@@ -15,7 +17,7 @@ shinyServer(function(input, output, clientData) {
   ## revals <-reactiveValues(log=list(c(event='start',time=as.character(Sys.time()))),issues=list());
   firstlog <- list(); firstlog[[as.character(Sys.time())]]<-c(code='c0000',comment='Starting session.');
   relog <- reactiveValues(log=firstlog);
-  revals <- reactiveValues(init=list(),schosen=NA);
+  revals <- reactiveValues(init=list(),schosen=NA,downloadready=F);
   srvenv <- environment();
 
   logevent<-function(code,comment){
@@ -157,6 +159,10 @@ shinyServer(function(input, output, clientData) {
     cat('Exiting updatemenus\n');
   };
 
+  clearrevals <- function(){
+    isolate(revals$downloadready <- F);
+  };
+  
 ### data handling
   ## Reactive functions run for their side-effect: updating the rawdat
   ## the invisible spans are there mainly so the reactive statements have a reason to execute
@@ -169,6 +175,7 @@ shinyServer(function(input, output, clientData) {
     ## TODO: data validation functions
     revals$fits <- list();
     logevent('c0001',sprintf('Researcher uploaded file "%s", of size %.0f k',input$infile$name,input$infile$size));
+    clearrevals();
     span(id="udata",style="display: none;",as.numeric(Sys.time()));
     ## blow away (or back up?) old values
   });
@@ -179,6 +186,7 @@ shinyServer(function(input, output, clientData) {
     revals$rawdat<-get(input$rbuiltin);
     revals$fits <- list();
     logevent('c0002',sprintf('Researcher chose built-in dataset "%s"',input$rbuiltin));
+    clearrevals();
     span(id="bdata",style="display: none;",as.numeric(Sys.time()));
     ## blow away (or back up?) old values
   });
@@ -192,7 +200,9 @@ shinyServer(function(input, output, clientData) {
     revals$ychoices <- isolate(revals$datvars$yvars);
     revals$cchoices <- isolate(revals$datvars$cvars);
     revals$tchoices <- isolate(c(revals$datvars$fvars,revals$datvars$nvars));
-    revals$filename <- tempfile(tmpdir='backups',fileext='.rdata');
+    revals$filepath <- filepath <- tempfile(tmpdir='www/results',fileext='.rdata');
+    revals$fileurl <- gsub('^www/','',filepath);
+    revals$fileid <- gsub('^www/results/|\\.rdata','',filepath);
   });
 
 
@@ -265,7 +275,7 @@ shinyServer(function(input, output, clientData) {
   output$myvar <- renderUI({
     ychoices<-revals$ychoices;
     if(length(ychoices)>0){
-      revals$init$myvar<-1;
+      isolate(revals$init$myvar<-1);
       list(
         selectInput("yvar","Response Variable (Y):",c(" ",ychoices)),
         span(class="badge",href="#yvarHelp",`data-toggle`="modal","?")
@@ -282,7 +292,7 @@ shinyServer(function(input, output, clientData) {
   output$mcvar <- renderUI({
     cchoices <- revals$cchoices;
     if(length(cchoices)>0&&!is.null(revals$ychosen)){
-      revals$init$mcvar<-1;
+      isolate(revals$init$mcvar<-1);
       list(
         selectInput("cvar","Right Censoring Indicator (if this is survival/time-to event data, otherwise leave this blank):",c(" ",cchoices)),
         span(class="badge",href="#cvarHelp",`data-toggle`="modal","?"));
@@ -292,7 +302,7 @@ shinyServer(function(input, output, clientData) {
   output$mgvar <- renderUI({
     gchoices <- revals$gchoices;
     if(length(gchoices)>0&&!is.null(revals$ychosen)){
-      revals$init$mgvar<-1;
+      isolate(revals$init$mgvar<-1);
       list(
         selectInput("gvar","Grouping Variable. This is NOT one of your predictor (X) variables. This is a nuisance variable to correct for. It's especially important that you read the help popup for this one so you can make the right choice.",c(" ",gchoices),selected=revals$gchosen),
         span(class="badge",href="#gvarHelp",`data-toggle`="modal","?")
@@ -307,7 +317,7 @@ shinyServer(function(input, output, clientData) {
   output$mxvars <- renderUI({
     xchoices <- revals$xchoices;
     if(length(xchoices)>0&&!is.null(revals$ychosen)){
-      revals$init$mxvars<-1;
+      isolate(revals$init$mxvars<-1);
       list(
         selectInput("xvars","Predictor Variables (X):",xchoices,selected=revals$xchosen,multiple=T),
         span(class="badge",href="#xvarHelp",`data-toggle`="modal","?")
@@ -325,7 +335,7 @@ shinyServer(function(input, output, clientData) {
     ## DONE: Time-ordering should be possible even for non-grouped data. Change below to revals$xchosen
     ## ...but if there is an ordering factor and no grouping, it should be LOGGED
     if(length(tchoices)>0&&length(revals$xchosen)>0){
-      revals$init$mtvar<-1;
+      isolate(revals$init$mtvar<-1);
       list(
         selectInput("tvar","Do any of these variables represent the order in which the data were collected? Your data will be sorted in that order after first sorting by grouping variable, if there is one.",c(" ",tchoices),selected=revals$tchosen),
         span(class='badge',href="#tvarHelp",`data-toggle`="modal","?")
@@ -333,7 +343,7 @@ shinyServer(function(input, output, clientData) {
         );} else span("")});
 
   output$ctvarmulti <- renderUI(if(length(tvar<-input$tvar)>0&&tvar!=' '){
-    revals$init$ctvarmulti <- 1;
+    isolate(revals$init$ctvarmulti <- 1);
     checkboxInput('tvarmulti',"Check here to indicate that you have more than one grouping variable.")
   } else span(""));
 
@@ -341,7 +351,7 @@ shinyServer(function(input, output, clientData) {
     rchoices <- revals$rchoices;
     ## DONE: LOG if the user chooses no random variables
     if(length(rchoices)>0&&!is.null(revals$gchosen)){
-      revals$init$mrvars<-1;
+      isolate(revals$init$mrvars<-1);
       list(
         selectInput("rvars","Random Variables (you can leave them all selected and the app will narrow them down for you):",rchoices,selected=isolate(revals$rchosen),multiple=T),
         span(class="badge",href="#rvarHelp",`data-toggle`="modal","?"));} else span("")});
@@ -361,7 +371,7 @@ shinyServer(function(input, output, clientData) {
     schoices <- revals$schoices; schosen <- isolate(revals$schosen)
     ## if(length(schoices)==0) browser();
     if(!is.null(isolate(revals$ychosen))&&!is.null(input$cmeth)&&input$cmeth!='Do not center'&&length(schoices)>0){
-      revals$init$msvars<-1;
+      isolate(revals$init$msvars<-1);
       ## if(length(schosen)==0||is.na(schosen)) browser();
       list(
         selectInput('svars',"Which of these variables do you want to center?",revals$schoices,selected=schosen,multiple=T),
@@ -434,7 +444,7 @@ shinyServer(function(input, output, clientData) {
       ## but are not supported by shiny
       selInp[[1]]$children <- c(selInp[[1]]$children,list(span(class='badge',href='#contHelp',`data-toggle`="modal","?")));
       selInp[[2]]$attribs$style <- 'width: auto';
-      revals$init$mcont <- 1;
+      isolate(revals$init$mcont <- 1);
       list(selInp,tags$hr());
     } else span("");
   });
@@ -444,11 +454,17 @@ shinyServer(function(input, output, clientData) {
 
   output$bfinal <- renderUI(if(!is.null(readyfinal<-revals$readyfinal)&&readyfinal) actionButton("final","Finalize"));
 
-  output$download <- downloadHandler(
-                       filename=function(){gsub('backups/','',revals$filename)},
-                       content=function(file) if(file.exists(revals$filename)) {
-                         system(sprintf('cp %s %s',revals$filename,file))
-                       } else {message<-"No results to save yet."; save(message,file=file)});
+  output$download <- renderUI(if(length(downloadready<-revals$downloadready)>0&&downloadready){
+    ## in the server version, need to construct a prefix path leading to the app named 'downloader' (in the same user's directory)
+    ## url <- paste0("?id=",isolate(id<-revals$fileid));
+    fileurl <- isolate(revals$fileurl);
+    span("Copy the URL of this link and keep it in a safe location",a(fileurl,href=fileurl,target='_blank'),br())
+  } else div(""));
+  ## output$download <- downloadHandler(
+  ##                      filename=function(){gsub('backups/','',revals$filename)},
+  ##                      content=function(file) if(file.exists(revals$filename)) {
+  ##                        system(sprintf('cp %s %s',revals$filename,file))
+  ##                      } else {message<-"No results to save yet."; save(message,file=file)});
   
 ### functions that read input from variable menus (loggable issues can happen here)
   ## function that constructs a formula, identifies the model type, and creates a cm object (loggable issues can happen here)
@@ -513,13 +529,13 @@ shinyServer(function(input, output, clientData) {
     }
     if(length(ecomment>0)) {
       logevent('c0004',ecomment);
-      cat('yvar calling updatemenus\n');
-      updatemenus();
+      ## cat('yvar calling updatemenus\n');
     }
+    updatemenus();
   } else revals$init$myvar<-NULL},label='oyvar');
 
   ## cvar 
-  observe({cvar<-input$cvar; if(is.null(isolate(revals$init$mcvar))){
+  observe({cvar<-input$cvar; if(is.null(isolate(revals$init$mcvar))&&!is.null(isolate(revals$ychosen))){
     ecomment <- c();
     if(!is.null(cvar)&&cvar!=' '&&!isTRUE(all.equal(cvar,isolate(revals$cchosen)))){
       revals$cchosen <- cvar;
@@ -538,7 +554,7 @@ shinyServer(function(input, output, clientData) {
     } else revals$init$mcvar<-NULL},label='ocvar');
 
   ## gvar
-  observe({gvar<-input$gvar; if(is.null(isolate(revals$init$mgvar))){
+  observe({gvar<-input$gvar; if(is.null(isolate(revals$init$mgvar))&&!is.null(isolate(revals$ychosen))>0){
     ecomment <- c();
     if(!is.null(gvar)&&gvar!=' '&&!isTRUE(all.equal(gvar,isolate(revals$gchosen)))){
       revals$gchosen <- gvar;
@@ -696,9 +712,10 @@ shinyServer(function(input, output, clientData) {
       fits<-isolate(revals$fits);
       trndat <- isolate(revals$trndat);
       revals_list<-isolate(reactiveValuesToList(revals));
-      save(log,fits,trndat,revals_list,file=isolate(revals$filename),compress='xz');
+      save(log,fits,trndat,revals_list,.Random.seed,file=isolate(revals$filepath),compress='xz');
+      revals$downloadready <- T;
       cat('Saved session!\n');
-    }});
+    } else revals$downloadready <- F});
 
   
 ### model fitting
@@ -923,6 +940,11 @@ shinyServer(function(input, output, clientData) {
   output$log <- renderTable(do.call(rbind,relog$log));
   output$fileinfo <- renderTable(input$infile);
   output$debug <- renderText({query<-parseQueryString(clientData$url_search);paste(names(query),query,sep="=",collapse=", ")});
+
+
+  ## The following will work on any client R session even now with the link created by this app (while the session is running):
+  ## load(rawConnection(getBinaryURL("http://localhost:8100/session/5ff4072ca099abbf37d7d1131ba7cd9f/download/download")))
+  
   ## output$mqqslider <- renderUI(if(length(qqrng_temp<-revals$qqrng_temp)>0){
   ## });
   ## functions that plot results
