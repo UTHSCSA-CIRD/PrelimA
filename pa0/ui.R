@@ -17,19 +17,12 @@ shinyUI(pageWithSidebar(
           sidebarPanel(
             htmlOutput("bdataread"),htmlOutput("udataread"),
             ## downloadLink("download","Copy the URL of this link and keep it in a safe location"),
-            htmlOutput("download"),
-            htmlOutput("bfinal"),
-            htmlOutput("bmodel"),
-            htmlOutput("mcont"),
             ## htmlOutput("mkcont"),
-            htmlOutput("myvar"), htmlOutput("mcvar"),
-            htmlOutput("mgvar"), htmlOutput("cgvarmulti"), htmlOutput("mxvars"),
-            htmlOutput("mtvar"), htmlOutput("ctvarmulti"),
-            htmlOutput("mcmeth"),
-            htmlOutput("msvars"),
-            htmlOutput("mrvars"),
-            tags$hr(),
+            htmlOutput("notice"),
+            htmlOutput("download"),
             conditionalPanel("$('li.active a').html()==='Data Upload'",
+                             ## conditionalPanel("$('#ouserdata>table').length>0",
+                             ##                  div("You can now specify the statistical model on the 'Data Exploration' tab"),br()),
                              selectInput('rbuiltin','Choose a test dataset',
                                          c(' ',
                                            ## datasets that give errors on load:
@@ -54,29 +47,25 @@ shinyUI(pageWithSidebar(
                                        accept=c('text/csv', 'text/comma-separated-values,text/plain')),
                              checkboxInput('header', 'Header', TRUE),
                              radioButtons('sep', 'Separator',
-                                          c(Comma=',',
-                                            Semicolon=';',
-                                            Tab='\t'),
-                                          'Tab'),
+                                          c(Comma=',',Semicolon=';',Tab='\t'),'Tab'),
                              radioButtons('quote', 'Quote',
-                                          c(None='',
-                                            'Double Quote'='"',
-                                            'Single Quote'="'"),
-                                          'None')
+                                          c(None='','Double Quote'='"','Single Quote'="'"),'None')
                              ),
             conditionalPanel("$('li.active a').html()==='Data Exploration'",
                              ## would be nice to have an option for centering on 'start time' but apparently I don't yet understand what start time means
                              ## also, as far as I can tell, kmeans with 1 cluster is exactly the same as column means
-                             selectInput('mcmth','How would you like to center your variables?',c('Do not center','Means','Medians')),
-                             span(class='badge',href="#centerHelp",`data-toggle`="modal","?"),
-                             htmlOutput('mcntr')
+                             htmlOutput("myvar"), htmlOutput("mcvar"),
+                             htmlOutput("mgvar"), htmlOutput("cgvarmulti"), htmlOutput("mxvars"),
+                             htmlOutput("mrvars")                             
               ),
+            conditionalPanel("$('li.active a').html()==='Data Upload'||$('li.active a').html()==='Data Exploration'",
+                             htmlOutput("mtvar"), htmlOutput("ctvarmulti"),
+                             htmlOutput("mcmeth"),htmlOutput("msvars"),tags$hr()
+                             ),
             conditionalPanel("$('li.active a').html()==='Model'",
-                             br(),br(),
-                             ## kind of ugly, but keeps button from showing up until it's valid
-                             conditionalPanel("$('#ounifx .data.table').length>0",
-                                              downloadLink("odl","Download Results")
-                                              )
+                             htmlOutput("bfinal"),
+                             htmlOutput("bmodel"),
+                             htmlOutput("mcont")
                              )
             ),
           mainPanel(
