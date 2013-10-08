@@ -22,42 +22,55 @@ shinyServer(function(input, output, session) {
                            chosen=list());
                            ## taken=c(),chosen=list());
   isolate(revals$choices <- revals$choicesorig);
-
-  rmenu <- function(tag,caption,choices,chosen,nullval=' '){
-    selectInput(tag,caption,c(nullval,union(chosen,choices)),selected=chosen);
+  ## convenience wrapper for generating dynamic menus
+  rmenu <- function(tag,label,choices,chosen=isolate(revals$chosen[[tag]]),multiple=F,nullval=' '){
+    ## tag, label = character (tag is the one that names the output object)
+    ## choices, chosen = character vectors
+    ## nullval = what to set as the default choice; set to NULL to not insert one
+    selectInput(tag,label,c(nullval,union(chosen,choices)),selected=chosen,multiple=multiple);
   }
   
   output$pulldown01 <- renderUI({
-    cat('entering pulldown01\n');
-    ## taken <- revals$taken;
+    cat('entering and exiting pulldown01\n');
     choices <- revals$choices$pulldown01;
-    chosen <- isolate(revals$chosen$pulldown01);
+    ## chosen <- isolate(revals$chosen$pulldown01);
     ## revals$pulldown01init <- 1;
-    isolate(relog$log[[as.character(Sys.time())]]<-'Rendered pulldown01');
-    cat('exiting pulldown01\n');
-    selectInput('pulldown01','Pulldown 01',c(' ',union(chosen,choices)),selected=chosen);
+    rmenu('pulldown01','Pulldown 01',choices);
+    ## ## taken <- revals$taken;
+    ## choices <- revals$choices$pulldown01;
+    ## chosen <- isolate(revals$chosen$pulldown01);
+    ## isolate(relog$log[[as.character(Sys.time())]]<-'Rendered pulldown01');
+    ## cat('exiting pulldown01\n');
+    ## selectInput('pulldown01','Pulldown 01',c(' ',union(chosen,choices)),selected=chosen);
     ## selectInput("pulldown01","Pulldown 01",c(' ',setdiff(isolate(revals$choices),taken)));
     ## selectInput("pulldown01","Pulldown 01",c(' ',union(chosen,setdiff(isolate(revals$choices),taken))),selected=chosen);
   });
 
   output$pulldown02 <- renderUI({
-    cat('entering pulldown02\n');
-    ## taken <- revals$taken;
+    cat('entering and exiting pulldown02\n');
     choices <- revals$choices$pulldown02;
-    chosen <- isolate(revals$chosen$pulldown02);
+    ## chosen <- isolate(revals$chosen$pulldown02);
     ## revals$pulldown02init <- 1;
-    isolate(relog$log[[as.character(Sys.time())]]<-'Rendered pulldown02');
-    cat('exiting pulldown02\n');
-    selectInput('pulldown02','Pulldown 02',c(' ',union(chosen,choices)),selected=chosen);
-    ## selectInput("pulldown02","Pulldown 02",c(' ',union(chosen,setdiff(isolate(revals$choices),taken))),selected=chosen);
+    rmenu('pulldown02','Pulldown 02',choices);
+    ## ## taken <- revals$taken;
+    ## choices <- revals$choices$pulldown02;
+    ## chosen <- isolate(revals$chosen$pulldown02);
+    ## isolate(relog$log[[as.character(Sys.time())]]<-'Rendered pulldown02');
+    ## cat('exiting pulldown02\n');
+    ## selectInput('pulldown02','Pulldown 02',c(' ',union(chosen,choices)),selected=chosen);
+    ## ## selectInput("pulldown02","Pulldown 02",c(' ',union(chosen,setdiff(isolate(revals$choices),taken))),selected=chosen);
   });
   
   observe(if(length(chosen <- input$pulldown01)>0){
     cat('entering obs01\n');
-    ## if(is.null(isolate(revals$pulldown01init))){
+     ## if(is.null(isolate(revals$pulldown01init))){
     ## if(chosen == ' ') chosen <- NULL;
-    chosen[chosen==' ']<-NULL;
+    chosen <- chosen[chosen!=' '];
+    ## if(' ' %in% chosen) {res<-try(chosen[chosen==' ']<-NULL);} else res<-NULL;
+    ## if(class(res)[1]=='try-error') browser();
     chosenold <- isolate(revals$chosen$pulldown01);
+    cat('chosenold:',paste(chosenold,collapse=', '),'\n');
+    cat('chosen:',paste(chosenold,collapse=', '),'\n');
     if(!vequal(chosenold,chosen)) isolate(revals$chosen$pulldown01 <- chosen);
     ## takenold <- isolate(revals$taken);
     ## taken <- union(setdiff(takenold,chosenold),chosen);
@@ -66,16 +79,21 @@ shinyServer(function(input, output, session) {
     ##   cat('updating taken\n');
     ##   revals$taken <- taken;
     ## }
-    ## } else isolate(revals$pulldown01init <- NULL);
+     ## } else isolate(revals$pulldown01init <- NULL);
     cat('leaving obs01\n');
   });
 
   observe(if(length(chosen <- input$pulldown02)>0){
     cat('entering obs02\n');
-    ## if(is.null(isolate(revals$pulldown02init))){
+     ## if(is.null(isolate(revals$pulldown02init))){
     ## if(chosen == ' ') chosen <- NULL;
-    chosen[chosen==' ']<-NULL;
+    ## if(' ' %in% chosen) chosen[chosen==' ']<-NULL;
+    chosen <- chosen[chosen!=' '];
+    ## if(' ' %in% chosen) {res<-try(chosen[chosen==' ']<-NULL);} else res<-NULL;
+    ## if(class(res)[1]=='try-error') browser();
     chosenold <- isolate(revals$chosen$pulldown02);
+    cat('chosenold:',paste(chosenold,collapse=', '),'\n');
+    cat('chosen:',paste(chosenold,collapse=', '),'\n');
     if(!vequal(chosenold,chosen)) isolate(revals$chosen$pulldown02 <- chosen);
     ## takenold <- isolate(revals$taken);
     ## browser();
@@ -85,7 +103,7 @@ shinyServer(function(input, output, session) {
     ##   cat('updating taken\n');
     ##   revals$taken <- taken;
     ## }
-    ## } else isolate(revals$pulldown02init <- NULL);
+     ## } else isolate(revals$pulldown02init <- NULL);
     cat('leaving obs02\n');
   });
 
@@ -95,11 +113,14 @@ shinyServer(function(input, output, session) {
     choicesorig<-isolate(revals$choicesorig);
     choicesold<-isolate(revals$choices);
     taken <- unlist(chosen);
-    cat('taken:',paste(taken,collapse=', '),'\n');
+    cat('  taken:',paste(taken,collapse=', '),'\n');
     choicesnew<-lapply(choicesorig,setdiff,taken);
     ## browser();
     for(ii in names(choicesnew)){
-      if(!vequal(choicesold[[ii]],choicesnew[[ii]])) revals$choices[[ii]]<-choicesnew[[ii]];
+      if(!vequal(choicesold[[ii]],choicesnew[[ii]])) {
+        cat('  for',ii,paste0(choicesold[[ii]],collapse=', '),'!=',paste0(choicesnew[[ii]],collapse=', ','\n'));
+        revals$choices[[ii]]<-choicesnew[[ii]];
+      }
     }
   });
 
