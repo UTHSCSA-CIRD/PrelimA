@@ -7,8 +7,8 @@ shinyServer(function(input, output, session) {
   };
   
   ## initialize the log
-  firstlog <- list(); ##firstlog[[as.character(Sys.time())]]<-c(code='c0000',comment='Starting session.');
-  firstlog[[as.character(Sys.time())]]<-'started'
+  firstlog <- list(); 
+  ## firstlog[[as.character(Sys.time())]]<-'started'
   relog <- reactiveValues(log=firstlog);
   ## define logging function
   ## logevent<-function(code,comment){
@@ -41,7 +41,10 @@ shinyServer(function(input, output, session) {
     chosenold <- isolate(revals$chosen$pulldown01);
     cat('chosenold:',paste(chosenold,collapse=', '),'\n');
     cat('chosen:',paste(chosenold,collapse=', '),'\n');
-    if(!vequal(chosenold,chosen)) isolate(revals$chosen$pulldown01 <- chosen);
+    if(!vequal(chosenold,chosen)) {
+      isolate(revals$chosen$pulldown01 <- chosen);
+      relog$log$o01 <- if(length(chosen)>0) sprintf('%s selected',paste0(chosen,collapse=',')) else NULL;
+    } 
     cat('leaving obs01\n');
   },label='obs_pulldown01',priority=1);
 
@@ -51,7 +54,10 @@ shinyServer(function(input, output, session) {
     chosenold <- isolate(revals$chosen$pulldown02);
     cat('chosenold:',paste(chosenold,collapse=', '),'\n');
     cat('chosen:',paste(chosenold,collapse=', '),'\n');
-    if(!vequal(chosenold,chosen)) isolate(revals$chosen$pulldown02 <- chosen);
+    if(!vequal(chosenold,chosen)) {
+      isolate(revals$chosen$pulldown02 <- chosen);
+      relog$log$o02 <- if(length(chosen)>0) sprintf('%s selected',paste0(chosen,collapse=',')) else NULL;
+    }
     cat('leaving obs02\n');
   },label='obs_pulldown02',priority=2);
 
@@ -61,7 +67,10 @@ shinyServer(function(input, output, session) {
     chosenold <- isolate(revals$chosen$pulldown03);
     cat('chosenold:',paste(chosenold,collapse=', '),'\n');
     cat('chosen:',paste(chosenold,collapse=', '),'\n');
-    if(!vequal(chosenold,chosen)) isolate(revals$chosen$pulldown03 <- chosen);
+    if(!vequal(chosenold,chosen)) {
+      isolate(revals$chosen$pulldown03 <- chosen);
+      relog$log$o03 <- if(length(chosen)>0) sprintf('%s selected',paste0(chosen,collapse=',')) else NULL;
+    }
     cat('leaving obs03\n');
   },label='obs_pulldown03',priority=3);
 
@@ -71,7 +80,10 @@ shinyServer(function(input, output, session) {
     chosenold <- isolate(revals$chosen$pulldown04);
     cat('chosenold:',paste(chosenold,collapse=', '),'\n');
     cat('chosen:',paste(chosenold,collapse=', '),'\n');
-    if(!vequal(chosenold,chosen)) isolate(revals$chosen$pulldown04 <- chosen);
+    if(!vequal(chosenold,chosen)) {
+      isolate(revals$chosen$pulldown04 <- chosen);
+      relog$log$o04 <- if(length(chosen)>0) sprintf('%s selected',paste0(chosen,collapse=',')) else NULL;
+    }
     cat('leaving obs04\n');
   },label='obs_pulldown04',priority=4);
 
