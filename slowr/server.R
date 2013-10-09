@@ -18,134 +18,137 @@ shinyServer(function(input, output, session) {
   ##   ## if(prevlog['code']!=code || prevlog['comment']!=comment)
   ##   isolate(relog$log[[as.character(Sys.time())]]<-c(code=code,comment=comment));
   ## };
-  revals <- reactiveValues(choicesorig=list(pulldown01=letters[1:4],pulldown02=letters[3:6],pulldown03=letters[2:5]),
+  revals <- reactiveValues(choicesorig=list(
+                             pulldown01=letters[1:4],
+                             pulldown02=letters[3:6],
+                             pulldown03=letters[2:5]),
                            chosen=list());
                            ## taken=c(),chosen=list());
-  isolate(revals$choices <- revals$choicesorig);
-  ## convenience wrapper for generating dynamic menus
-  rmenu <- function(tag,label,choices,chosen=isolate(revals$chosen[[tag]]),multiple=F,nullval=' '){
-    ## tag, label = character (tag is the one that names the output object)
-    ## choices, chosen = character vectors
-    ## nullval = what to set as the default choice; set to NULL to not insert one
-    selectInput(tag,label,c(nullval,union(chosen,choices)),selected=chosen,multiple=multiple);
-  }
+  isolate(revals$choices <- choicesorig <- revals$choicesorig);
   
-  output$pulldown01 <- renderUI({
-    cat('entering and exiting pulldown01\n');
-    choices <- revals$choices$pulldown01;
-    ## chosen <- isolate(revals$chosen$pulldown01);
-    ## revals$pulldown01init <- 1;
-    rmenu('pulldown01','Pulldown 01',choices);
-    ## ## taken <- revals$taken;
-    ## choices <- revals$choices$pulldown01;
-    ## chosen <- isolate(revals$chosen$pulldown01);
-    ## isolate(relog$log[[as.character(Sys.time())]]<-'Rendered pulldown01');
-    ## cat('exiting pulldown01\n');
-    ## selectInput('pulldown01','Pulldown 01',c(' ',union(chosen,choices)),selected=chosen);
-    ## selectInput("pulldown01","Pulldown 01",c(' ',setdiff(isolate(revals$choices),taken)));
-    ## selectInput("pulldown01","Pulldown 01",c(' ',union(chosen,setdiff(isolate(revals$choices),taken))),selected=chosen);
-  });
+  ## convenience wrapper for generating dynamic menus
+  ## rmenu <- function(tag,label,choices,chosen=isolate(revals$chosen[[tag]]),multiple=F,nullval=' '){
+  ##   ## tag, label = character (tag is the one that names the output object)
+  ##   ## choices, chosen = character vectors
+  ##   ## nullval = what to set as the default choice; set to NULL to not insert one
+  ##   selectInput(tag,label,c(nullval,union(chosen,choices)),selected=chosen,multiple=multiple);
+  ## }
+  
+  ## output$pulldown01 <- renderUI({
+  ##   ## choices <- revals$choicesorig$pulldown01;
+  ##   rmenu('pulldown01','Pulldown 01',isolate(choicesorig$pulldown01));
+  ## });
 
-  output$pulldown02 <- renderUI({
-    cat('entering and exiting pulldown02\n');
-    choices <- revals$choices$pulldown02;
-    ## chosen <- isolate(revals$chosen$pulldown02);
-    ## revals$pulldown02init <- 1;
-    rmenu('pulldown02','Pulldown 02',choices);
-    ## ## taken <- revals$taken;
-    ## choices <- revals$choices$pulldown02;
-    ## chosen <- isolate(revals$chosen$pulldown02);
-    ## isolate(relog$log[[as.character(Sys.time())]]<-'Rendered pulldown02');
-    ## cat('exiting pulldown02\n');
-    ## selectInput('pulldown02','Pulldown 02',c(' ',union(chosen,choices)),selected=chosen);
-    ## ## selectInput("pulldown02","Pulldown 02",c(' ',union(chosen,setdiff(isolate(revals$choices),taken))),selected=chosen);
-  });
+  ## output$pulldown02 <- renderUI({
+  ##   ## choices <- revals$choicesorig$pulldown02;
+  ##   rmenu('pulldown02','Pulldown 02',isolate(choicesorig$pulldown02));
+  ## });
+
+  ## output$pulldown03 <- renderUI({
+  ##   rmenu('pulldown03','Pulldown 03',isolate(choicesorig$pulldown03));
+  ## });
+
+  updmenu <- function(tag,choices=revals$choices[[tag]],nullval=' '){
+    chosen<-isolate(revals$chosen[[tag]]);
+    if(length(intersect(chosen,choices))==0) chosen <- NULL;
+    updateSelectInput(session,tag,choices=c(nullval,choices),selected=chosen);
+  };
   
   observe(if(length(chosen <- input$pulldown01)>0){
     cat('entering obs01\n');
-     ## if(is.null(isolate(revals$pulldown01init))){
-    ## if(chosen == ' ') chosen <- NULL;
     chosen <- chosen[chosen!=' '];
-    ## if(' ' %in% chosen) {res<-try(chosen[chosen==' ']<-NULL);} else res<-NULL;
-    ## if(class(res)[1]=='try-error') browser();
     chosenold <- isolate(revals$chosen$pulldown01);
     cat('chosenold:',paste(chosenold,collapse=', '),'\n');
     cat('chosen:',paste(chosenold,collapse=', '),'\n');
     if(!vequal(chosenold,chosen)) isolate(revals$chosen$pulldown01 <- chosen);
-    ## takenold <- isolate(revals$taken);
-    ## taken <- union(setdiff(takenold,chosenold),chosen);
-    ## cat('taken:',paste(taken,collapse=', '),'\n');
-    ## if((length(takenold)>0||length(taken)>0)&&(length(setdiff(takenold,taken))>0||length(setdiff(taken,takenold))>0)){
-    ##   cat('updating taken\n');
-    ##   revals$taken <- taken;
-    ## }
-     ## } else isolate(revals$pulldown01init <- NULL);
     cat('leaving obs01\n');
   });
 
   observe(if(length(chosen <- input$pulldown02)>0){
     cat('entering obs02\n');
-     ## if(is.null(isolate(revals$pulldown02init))){
-    ## if(chosen == ' ') chosen <- NULL;
-    ## if(' ' %in% chosen) chosen[chosen==' ']<-NULL;
     chosen <- chosen[chosen!=' '];
-    ## if(' ' %in% chosen) {res<-try(chosen[chosen==' ']<-NULL);} else res<-NULL;
-    ## if(class(res)[1]=='try-error') browser();
     chosenold <- isolate(revals$chosen$pulldown02);
     cat('chosenold:',paste(chosenold,collapse=', '),'\n');
     cat('chosen:',paste(chosenold,collapse=', '),'\n');
     if(!vequal(chosenold,chosen)) isolate(revals$chosen$pulldown02 <- chosen);
-    ## takenold <- isolate(revals$taken);
-    ## browser();
-    ## taken <- union(setdiff(takenold,chosenold),chosen);
-    ## cat('taken:',paste(taken,collapse=', '),'\n');
-    ## if((length(takenold)>0||length(taken)>0)&&(length(setdiff(takenold,taken))>0||length(setdiff(taken,takenold))>0)){
-    ##   cat('updating taken\n');
-    ##   revals$taken <- taken;
-    ## }
-     ## } else isolate(revals$pulldown02init <- NULL);
     cat('leaving obs02\n');
   });
+
+  observe(if(length(chosen <- input$pulldown03)>0){
+    cat('entering obs03\n');
+    chosen <- chosen[chosen!=' '];
+    chosenold <- isolate(revals$chosen$pulldown03);
+    cat('chosenold:',paste(chosenold,collapse=', '),'\n');
+    cat('chosen:',paste(chosenold,collapse=', '),'\n');
+    if(!vequal(chosenold,chosen)) isolate(revals$chosen$pulldown03 <- chosen);
+    cat('leaving obs03\n');
+  });
+
+  observe(if(length(chosen <- input$pulldown04)>0){
+    cat('entering obs04\n');
+    chosen <- chosen[chosen!=' '];
+    chosenold <- isolate(revals$chosen$pulldown04);
+    cat('chosenold:',paste(chosenold,collapse=', '),'\n');
+    cat('chosen:',paste(chosenold,collapse=', '),'\n');
+    if(!vequal(chosenold,chosen)) isolate(revals$chosen$pulldown04 <- chosen);
+    cat('leaving obs04\n');
+  });
+
+  ## observe({
+  ##   choices<-revals$choices$pulldown01;
+  ##   chosen<-isolate(revals$chosen$pulldown01);
+  ##   if(length(intersect(chosen,choices))==0) chosen <- NULL;
+  ##   ## if(!chosen %in% choices) chosen <- NULL;
+  ##   updateSelectInput(session,"pulldown01",choices=c(' ',choices),selected=chosen);
+  ## });
+  observe(updmenu('pulldown01'));
+  observe(updmenu('pulldown02'));
+  observe(updmenu('pulldown03'));
+  observe(updmenu('pulldown04'));
+  ## observe({
+  ##   choices<-revals$choices$pulldown02;
+  ##   chosen<-isolate(revals$chosen$pulldown02);
+  ##   if(length(intersect(chosen,choices))==0) chosen <- NULL;
+  ##   updateSelectInput(session,"pulldown02",choices=c(' ',choices),selected=chosen);
+  ## });
+
+  ## observe({
+  ##   choices<-revals$choices$pulldown03;
+  ##   chosen<-isolate(revals$chosen$pulldown03);
+  ##   if(length(intersect(chosen,choices))==0) chosen <- NULL;
+  ##   updateSelectInput(session,"pulldown03",choices=c(' ',choices),selected=chosen);
+  ## });
+
+  ## observe({
+  ##   choices<-revals$choices$pulldown04;
+  ##   chosen<-isolate(revals$chosen$pulldown04);
+  ##   if(length(intersect(chosen,choices))==0) chosen <- NULL;
+  ##   updateSelectInput(session,"pulldown04",choices=c(' ',choices),selected=chosen);
+  ## });
 
   observe({
     cat('entering obs chosen\n');
     chosen<-revals$chosen;
+    taken <- unlist(chosen);
+    ## to prevent endless update-loop if some asshole chooses
+    ## conflicting menu options faster than reactive update
+    ## can happen
+    if(any(table(taken)>1)){
+      isolate(revals$chosen <- list());
+      taken <- NULL;
+    }
     choicesorig<-isolate(revals$choicesorig);
     choicesold<-isolate(revals$choices);
-    taken <- unlist(chosen);
     cat('  taken:',paste(taken,collapse=', '),'\n');
     choicesnew<-lapply(choicesorig,setdiff,taken);
-    ## browser();
     for(ii in names(choicesnew)){
-      if(!vequal(choicesold[[ii]],choicesnew[[ii]])) {
-        cat('  for',ii,paste0(choicesold[[ii]],collapse=', '),'!=',paste0(choicesnew[[ii]],collapse=', ','\n'));
-        revals$choices[[ii]]<-choicesnew[[ii]];
+      if(!vequal(choicesold[[ii]],iichoices<-union(chosen[[ii]],choicesnew[[ii]]))) {
+        cat('  for',ii,paste0(choicesold[[ii]],collapse=', '),'!=',paste0(choicesnew[[ii]],collapse=', '),'\n');
+        revals$choices[[ii]]<-iichoices;
       }
     }
+    cat('exiting obs chosen\n');
   });
 
-  ## observe({
-  ##   pulldown<-input$pulldown;
-  ##   logevent("c0001",sprintf('Detected pulldown input "%s"',pulldown));
-  ##   cat('multichoices set\n');
-  ##   ## browser();
-  ##   revals$autochosen<-revals$choices[switch(pulldown,None=c(),Some=seq(1,6,by=2),Some2=seq(1,6,by=2),Others=seq(2,6,by=2),All=1:6)];
-  ## });
-  ## output$multimenu <- renderUI({
-  ##   choices <- revals$choices; autochosen <- revals$autochosen; if(length(autochosen)==0) autochosen<-NULL;
-  ##   logevent("c0002",sprintf('Populating selection list with "%s" of which "%s" are chosen',paste(choices,collapse='","'),paste(autochosen,collapse='","')));
-  ##   revals$multinit<-T;
-  ##   cat('multimenu created\n');
-  ##   selectInput("multichosen","Select Manual Choices:",c(sample(letters[-(1:6)],3),choices),selected=sample(autochosen,length(autochosen)),multiple=T);
-  ## });
-  ## observe({
-  ##   input$multichosen;
-  ##   if(isolate(revals$multinit)) {
-  ##     revals$multinit<-F;
-  ##     logevent('c0004','Init values detected');
-  ##   } else {
-  ##     logevent("c0003",sprintf('Items "%s" manually chosen from multimenu',paste(input$multichosen,collapse='","')));
-  ##   }
-  ## });
   output$log <- renderTable({do.call(rbind,relog$log)});
 });  
