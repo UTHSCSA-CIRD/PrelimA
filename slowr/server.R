@@ -6,8 +6,6 @@ shinyServer(function(input, output, session) {
     length(setdiff(xx,yy))==0&&length(setdiff(yy,xx))==0;
   };
   
-  ## check whether this is via a real website
-  ## analyzesession <- !missing(session);
   ## initialize the log
   firstlog <- list(); ##firstlog[[as.character(Sys.time())]]<-c(code='c0000',comment='Starting session.');
   firstlog[[as.character(Sys.time())]]<-'started'
@@ -26,34 +24,17 @@ shinyServer(function(input, output, session) {
                            ## taken=c(),chosen=list());
   isolate(revals$choices <- choicesorig <- revals$choicesorig);
   
-  ## convenience wrapper for generating dynamic menus
-  ## rmenu <- function(tag,label,choices,chosen=isolate(revals$chosen[[tag]]),multiple=F,nullval=' '){
-  ##   ## tag, label = character (tag is the one that names the output object)
-  ##   ## choices, chosen = character vectors
-  ##   ## nullval = what to set as the default choice; set to NULL to not insert one
-  ##   selectInput(tag,label,c(nullval,union(chosen,choices)),selected=chosen,multiple=multiple);
-  ## }
-  
-  ## output$pulldown01 <- renderUI({
-  ##   ## choices <- revals$choicesorig$pulldown01;
-  ##   rmenu('pulldown01','Pulldown 01',isolate(choicesorig$pulldown01));
-  ## });
-
-  ## output$pulldown02 <- renderUI({
-  ##   ## choices <- revals$choicesorig$pulldown02;
-  ##   rmenu('pulldown02','Pulldown 02',isolate(choicesorig$pulldown02));
-  ## });
-
-  ## output$pulldown03 <- renderUI({
-  ##   rmenu('pulldown03','Pulldown 03',isolate(choicesorig$pulldown03));
-  ## });
-
+  ## convenience wrapper for updating menus
   updmenu <- function(tag,choices=revals$choices[[tag]],nullval=' '){
+    ## tag = character, name of an object that does/will exist in revals, input, output
+    ## choices = character vector
+    ## nullval = what to use as the NULL value in pull-down lists. Set it to NULL in multi-select lists.
     chosen<-isolate(revals$chosen[[tag]]);
     if(length(intersect(chosen,choices))==0) chosen <- NULL;
     updateSelectInput(session,tag,choices=c(nullval,choices),selected=chosen);
   };
-  
+
+  ## these observers intercept user input and update revals$chosen
   observe(if(length(chosen <- input$pulldown01)>0){
     cat('entering obs01\n');
     chosen <- chosen[chosen!=' '];
@@ -62,7 +43,7 @@ shinyServer(function(input, output, session) {
     cat('chosen:',paste(chosenold,collapse=', '),'\n');
     if(!vequal(chosenold,chosen)) isolate(revals$chosen$pulldown01 <- chosen);
     cat('leaving obs01\n');
-  });
+  },label='obs_pulldown01',priority=1);
 
   observe(if(length(chosen <- input$pulldown02)>0){
     cat('entering obs02\n');
@@ -72,7 +53,7 @@ shinyServer(function(input, output, session) {
     cat('chosen:',paste(chosenold,collapse=', '),'\n');
     if(!vequal(chosenold,chosen)) isolate(revals$chosen$pulldown02 <- chosen);
     cat('leaving obs02\n');
-  });
+  },label='obs_pulldown02',priority=2);
 
   observe(if(length(chosen <- input$pulldown03)>0){
     cat('entering obs03\n');
@@ -82,7 +63,7 @@ shinyServer(function(input, output, session) {
     cat('chosen:',paste(chosenold,collapse=', '),'\n');
     if(!vequal(chosenold,chosen)) isolate(revals$chosen$pulldown03 <- chosen);
     cat('leaving obs03\n');
-  });
+  },label='obs_pulldown03',priority=3);
 
   observe(if(length(chosen <- input$pulldown04)>0){
     cat('entering obs04\n');
@@ -92,40 +73,15 @@ shinyServer(function(input, output, session) {
     cat('chosen:',paste(chosenold,collapse=', '),'\n');
     if(!vequal(chosenold,chosen)) isolate(revals$chosen$pulldown04 <- chosen);
     cat('leaving obs04\n');
-  });
+  },label='obs_pulldown04',priority=4);
 
-  ## observe({
-  ##   choices<-revals$choices$pulldown01;
-  ##   chosen<-isolate(revals$chosen$pulldown01);
-  ##   if(length(intersect(chosen,choices))==0) chosen <- NULL;
-  ##   ## if(!chosen %in% choices) chosen <- NULL;
-  ##   updateSelectInput(session,"pulldown01",choices=c(' ',choices),selected=chosen);
-  ## });
-  observe(updmenu('pulldown01'));
-  observe(updmenu('pulldown02'));
-  observe(updmenu('pulldown03'));
-  observe(updmenu('pulldown04'));
-  ## observe({
-  ##   choices<-revals$choices$pulldown02;
-  ##   chosen<-isolate(revals$chosen$pulldown02);
-  ##   if(length(intersect(chosen,choices))==0) chosen <- NULL;
-  ##   updateSelectInput(session,"pulldown02",choices=c(' ',choices),selected=chosen);
-  ## });
+  ## these observers update the menus and are invalidated when their respective objects in revals$choices change
+  observe(updmenu('pulldown01'),label='obs_update_pulldown01',priority=11);
+  observe(updmenu('pulldown02'),label='obs_update_pulldown02',priority=12);
+  observe(updmenu('pulldown03'),label='obs_update_pulldown03',priority=13);
+  observe(updmenu('pulldown04'),label='obs_update_pulldown04',priority=14);
 
-  ## observe({
-  ##   choices<-revals$choices$pulldown03;
-  ##   chosen<-isolate(revals$chosen$pulldown03);
-  ##   if(length(intersect(chosen,choices))==0) chosen <- NULL;
-  ##   updateSelectInput(session,"pulldown03",choices=c(' ',choices),selected=chosen);
-  ## });
-
-  ## observe({
-  ##   choices<-revals$choices$pulldown04;
-  ##   chosen<-isolate(revals$chosen$pulldown04);
-  ##   if(length(intersect(chosen,choices))==0) chosen <- NULL;
-  ##   updateSelectInput(session,"pulldown04",choices=c(' ',choices),selected=chosen);
-  ## });
-
+  ## observer that checks for anything within revals$chosen changing, at which point it decides what in revals choices should change
   observe({
     cat('entering obs chosen\n');
     chosen<-revals$chosen;
@@ -148,7 +104,7 @@ shinyServer(function(input, output, session) {
       }
     }
     cat('exiting obs chosen\n');
-  });
+  },label='obs_chosen',priority=100);
 
   output$log <- renderTable({do.call(rbind,relog$log)});
 });  
