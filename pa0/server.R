@@ -1,348 +1,317 @@
-## TODO: until zph is ready, make sure coxph is permitted to proceed, just with a warning
-## TODO: implement issue tracker
-## TODO: copy over all the fun stuff from pa to the Data Exploration tab
-## TODO: result plots
-## TODO: result tables
-## TODO: update help files
-## TODO: until ACF fixed, put in a warning for time-series data
-## TODO: blow away old variable lists when data changes
-## TODO: make sure tchoices are valid ones from the starting
-## TODO: programmatically generate as many zph plots as needed
-## TODO: ...each with a slider
-## TODO: checkbox to bypass AIC altogether
-## DONE: implement backups & downloads
-## TODO: implement fingerprints
-## TODO: if ordering variable was specified, and lm/lme, then plot ACF
+## DONE: rvar
+## DONE: svar, tvar
+## DONE: update trndat when gvar, svar, or tvar changes
+## DONE: jesus christ bananas, I might have to refactor revals. If so, separate out...
+##   just choices, actually. Now that I know each top-level object inside reactiveValues
+##   is an all-or-nothing dependency, might as well keep the contents of choicesnx here too
+##   choiceorig can stay in revals, it only changes when there is new data
+##   chosen and choesnnx don't have to exist... apparently updateSelectInput really does leave
+##   everything alone except the things you tell it to update. If selected is no longer in choices,
+##   it gets removed and *then* it looks like the user de-selected it and there is invalidation
+##   This in turn means I can get rid of one layer of observers and have obs_chosen get invalidate
+##   directly from input.
+## DONE: refactor relog so that each log-entry is at top level
+## DONE: have direct-to-input dependency for obs_chosen
+## DONE: now re-introduce tvar, svar and friends
+## DONE: re-link trndat to tvar, svar
+## DONE: re-introduce rvar
+## DONE: re-introduce logging
+## DONE: issues
+## DONE: contrasts menu
+## DONE: the sidebar notice
+## DONE: observer for contrasts menu
+## DONE: analyze
+## DONE: result table
+## DONE: download link
+## DONE: exploratory plots
+## DONE: checkboxes for multi-groups, multi-times, etc.
+## DONE: sort code into include files
+## DONE: diagnostic plots, resid, abs resid
+## DONE: BUG: model doesn't run without contrasts
+## DONE: fix Cox
+## DONE: user feedback menus for plots
+## DONE: detect when lm/lme residual questions answered and permit finalizing
+## DONE: Teresa's bug
+## DONE: prohibit results and finalize until zph residuals finalized for coxph model
+## DONE: Exclude constant variables from choices except for cvar
+## DONE: hunt down and do the issues-related TODOs in code; remove the ones not associated with buttons
+## DONE: residual plots when only a few categoric variables bug
+## DONE: update help file
+## DONE: downloadable data template
+#######
+## TODO: downloadable results
+## TODO: corrected p-values
+## TODO: bug: why no resids or results for numeric-only predictors?
+## TODO: make info.data.frame trim off all-NA columns
+## TODO: auto-detect quoting too
+## TODO: option to remove terms from initial model
+## TODO: bullseye plot when yvar chosen
+## TODO: issue for any ordering variable, if not already
+## TODO: issue specifically for repeated measures, if not already
+## TODO: issue for collinearity
+## TODO: panic button
+## TODO: feedback form
+## TODO: more logging
+## DONE?: handle failed aic
+## TODO: handle failed contrast
+## TODO: figure out what to reinitialize to let analysis be run multiple times
+## TODO: refactor issue database
+####### lower priority
+## TODO: support 3+ level factors in unicontr and then undo the hack with nunique==2 and fvars
+## TODO: agreement page
+## TODO: priority poll
+## TODO: document the exploratory plots
+## TODO: bullseye plot
+## TODO: ACF
+## TODO: clickable tails for qqplot
+
+source('visualres.R');
+source('info.data.frame.R');
+## source('text.R');
+
+debugmode <- T;
 
 lmec<-lmeControl(opt='optim',maxIter=100,msMaxIter=100,niterEM=50,msMaxEval=400);
 
-codelist<-list(c0000=list(name='default',comment='Event code c happened',advice='Carry on'),
-               c0001=list(name='Upload',comment='File uploaded.',advice=NA),
-               c0002=list(name='Test data chosen',comment='A built-in R dataset was chosen.'),
-               c9999=list(name='logtest',comment='Testing the log system',advice='Test it till it works right'));
-if(!file.exists('www/results')){
-  if(!file.exists('www')) dir.create('www');
-  dir.create('www/results');
-}
-
-shinyServer(function(input, output, clientData) {
-  ## analyzesession <- !missing(session);
-  ## object to store multiple, independent reactive values
-  ## revals <-reactiveValues(log=list(c(event='start',time=as.character(Sys.time()))),issues=list());
-  firstlog <- list(); firstlog[[as.character(Sys.time())]]<-c(code='c0000',comment='Starting session.');
-  relog <- reactiveValues(log=firstlog);
-  revals <- reactiveValues(init=list(),schosen=NA,downloadready=F);
-  srvenv <- environment();
-
+## NOTE: the difference between log and issues
+## log is intended to be a kitchen-sink record of all user input and its indirect consequences
+## it will contain redundant and self-cancelling information, and will be indexed by timestamp
+## issues is a record of important information intended to be read by a statistician
+## issues is indexed by an issue code, and whenever the condition that triggered the issue no longer
+## applies, that entry is NULL-ed out
+cat('\n\nStarting shinyserver\n');
+shinyServer(function(input, output, session) {
+### functions
+  ## determine if two vectors have all the same elements without regard to order or duplicates  
+  vequal<-function(xx,yy,nullvals=' '){
+    if(any(xxmask<-xx%in%nullvals)) if(length(xx)==1) xx <- NULL else xx[xxmask]<-NULL;
+    if(any(yymask<-yy%in%nullvals)) if(length(yy)==1) yy <- NULL else yy[yymask]<-NULL;
+    err<-try(oo<-length(setdiff(xx,yy))==0&&length(setdiff(yy,xx))==0);
+    if(class(err)[1]=='try-error') browser();
+    oo;
+  };
+  ## logging
   logevent<-function(code,comment){
-    prevlog <- isolate(tail(relog$log,1))[[1]];
-    if(prevlog['code']!=code || prevlog['comment']!=comment) isolate(relog$log[[as.character(Sys.time())]]<-c(code=code,comment=comment));
-  }
-
-  updatemenus <- function(){
-    input$cmeth;
-    cat('Entering updatemenus\n');
-    ## run when a user makes menu selections, to update availability of other variables as needed
-    ## while preserving previous choices, if possible
-    taken.yc <- c(revals$ychosen,revals$cchosen);
-    gchoices <- setdiff(revals$datvars$gvars,taken.yc);
-    ## constrain the available grouping variable choices
-    ## the trycatch business is to reduce screen spam 
-    if(!isTRUE(tryCatch(all.equal(sort(gchoices),sort(revals$gchoices)),warning=function(e){}))){
-      revals$gchoices <- gchoices;
-      if(!is.null(revals$gchosen)) {
-        gchosen <- intersect(gchoices,revals$gchosen);
-        if(length(gchosen)==0) revals$gchosen <- NULL;
-      }};
-    ## then constrain the available random variable choices
-    if(!is.null(revals$gchosen)){
-      ## cat('Updatemenus setting rchosen.prev from',paste0(isolate(revals$rchosen.prev),collapse=','),'to',paste0(isolate(revals$rchosen),collapse=','),'\n');
-      ## rchoices.prev <- isolate(revals$rchoices);
-      rchosen.prev <- isolate(revals$rchosen);
-      revals$rchosen.prev <- isolate(revals$rchosen);
-      ## what are the currently valid random slope/interaction choices?
-      rchoices <- setdiff(revals$datvars$rvars[[revals$gchosen]],taken.yc);
-      if(length(rchoices)==0){
-        logevent('c0007','No variables meet the criteria for participating in random slopes/interactions');
-        revals$rchoices <- NULL; revals$rchosen <- NULL; cat('Line 55, setting revals$rchosen to NULL\n');
-      } else {
-        if(!isTRUE(tryCatch(all.equal(sort(rchoices),sort(revals$rchoices)),warning=function(e){}))){
-          revals$rchoices <- rchoices;
-          ## logevent('c0007',
-          ##          sprintf('The following variables currently meet the criteria for participating in random slopes/interactions: "%s"',
-          ##                  paste(rchoices,collapse='","')));
-          if(length(revals$rchosen)>0){
-            rchosen <- intersect(rchoices,revals$rchosen);
-            if(length(rchosen)==0) {
-              revals$rchosen <- rchoices; cat('Setting rchosen to ',paste(rchoices,collapse=','),', line 65 \n');
-              logevent('c0008','Automatically defaulting to considering all currently possible random slopes/interactions (1).');
-            } else {
-              if(!isTRUE(tryCatch(all.equal(sort(rchosen),sort(revals$rchosen)),warning=function(e){}))) {
-                revals$rchosen <- rchosen; cat('Setting rchosen to ',paste(rchosen,collapse=','),', line 69 \n');
-                ## logevent('c0008',
-                ##          sprintf('Of the manually selected variabls for which random slopes/interactions are to be considered, the following remain: "%s"',
-                ##                  paste(rchosen,collapse='","')));
-              }
-            }} else {
-              revals$rchosen <- rchoices; cat('Setting rchosen to ',paste(rchoices,collapse=','),', line 75 \n');
-              logevent('c0008','Automatically defaulting to considering all currently possible random slopes/interactions (2).');
-            }
-        }}
-    };
-    
-    ## constrain the available x variable choices
-    ## The extra intersect statement is there to insure that ordering differences don't make it look like the choices have changed
-    if(!is.null(revals$ychosen)){
-      xchoices <- setdiff(c(revals$datvars$nvars,revals$datvars$fvars),c(taken.yc,isolate(revals$gchosen)));
-      if(length(xchoices)==0){
-        logevent('w0002','No valid explanatory variables left.');
-        revals$xchoices <- NULL; revals$xchosen <- NULL;
-      } else {
-        if(!isTRUE(tryCatch(all.equal(sort(xchoices),sort(revals$xchoices)),warning=function(e){}))){
-          revals$xchoices <- xchoices;
-          ## logevent('c0011',
-          ##          sprintf('The following currently meet the criteria for being possible explanatory variables: "%s"',
-          ##                  paste(xchoices,collapse='","')));
-          if(length(revals$xchosen)>0){
-            xchosen <- intersect(xchoices,revals$xchosen);
-            if(length(xchosen)==0) {
-              revals$xchosen <- NULL;
-              logevent('c0012','All previously selected explanatory variables have been deselected as a results of response and grouping variable selections.');
-            } else {
-              if(!isTRUE(tryCatch(all.equal(sort(xchosen),sort(revals$xchosen)),warning=function(e){}))) revals$xchosen <- xchosen;
-              ## logevent('c0013',sprintf('The selected explanatory variables that remain are: "%s"',paste(xchosen,collapse='","')));
-            }
-            ## unlike for the rvalues, we do NOT default to choosing all possible values
-          }}}}
-    ## constrain what variables can be scaled (i.e. not y, the censoring variable, or the time variable
-    if(!is.null(revals$ychosen)&&length(revals$xchosen)>0&&!is.null(input$cmeth)&&input$cmeth!='Do not center'){
-      schoices <- setdiff(revals$datvars$nvars,c(taken.yc,revals$tchosen));
-      schosen <- isolate(revals$schosen);
-      ## if(is.na(isolate(revals$schosen))){
-      ##   revals$schosen <- schoices;
-      ## }
-      if(length(schoices)==0){
-        revals$schoices <- NULL; if(length(schosen)==0||!is.na(schosen)) revals$schosen <- NULL;
-      } else {
-        if(length(schosen)>0&&is.na(schosen)) {
-          revals$schosen <- schoices;
-          logevent('c0003d',sprintf('All numeric explanatory variables will be centered by subtracting their respective %s unless otherwise chosen by the researcher.',
-                                 tolower(input$cmeth)));
-        } else if(!isTRUE(tryCatch(all.equal(sort(schoices),sort(revals$schoices)),warning=function(e){}))){
-          revals$schoices <- schoices;
-          if(length(schosen)>0){
-            schosen <- intersect(schoices,schosen);
-            ## maybe a couple of logevents below
-            if(length(schosen)==0) revals$schosen <- NULL else {
-              if(!isTRUE(tryCatch(all.equal(sort(schosen),sort(schosen)),warning=function(e){}))) revals$schosen <- schosen;
-            }} else {
-              revals$schosen <- schoices;
-              logevent('c0003c',
-                       sprintf('All numeric explanatory variables will be centered by subtracting their respective %s unless otherwise chosen by the researcher.',
-                               tolower(input$cmeth)));
-            }
-          }}};
-    ## time-series variables really should never overlap with response variables or censoring variables
-    ## at least, I can't think of a reason
-    if(!is.null(revals$ychosen)&&length(c(revals$xchosen,revals$rchosen))>0){
-      tchoices <- setdiff(revals$tchoices,taken.yc);
-      if(length(tchoices)==0){
-        revals$tchoices <- NULL; revals$tchosen <- NULL;
-      } else {
-        if(!isTRUE(tryCatch(all.equal(sort(tchoices),sort(revals$tchoices)),warning=function(e){}))){
-          revals$tchoices <- tchoices;
-          if(length(revals$tchosen)>0){
-            tchosen <- intersect(tchoices,revals$tchosen);
-            if(length(tchosen)==0) revals$tchosen <- NULL else {
-              ## below might be a more efficient alternative to the isTRUE statement to see if the selections have changed
-              if(length(tchosen)!=length(revals$tchosen)) {
-                revals$tchosen <- tchosen;
-                ## logevent('c0012',
-                ##          sprintf('The variables that will be treated as representing time/order has changed and the following remain: "%s".',
-                ##                  paste(tchosen,collapse='","')));
-              }}}}}}
-    cat('Exiting updatemenus\n');
+    relog[[as.character(Sys.time())]] <- c(code=code,comment=comment);
   };
 
-  clearrevals <- function(){
-    isolate(revals$downloadready <- F);
-  };
+  scrubrevals <- function(xx){for(ii in isolate(names(xx))) xx[[ii]]<-NULL} 
+
+  ## formula wrangling function
+  source('minmodel.R',local=T);
   
+### initialize variables: stage 0
+  ## initialize the logs and reactive values repository
+  relog <- reactiveValues(); relog[[as.character(Sys.time())]] <- c(code='c0000',comment='Starting session.');
+  reissue <- reactiveValues(ic0000='Starting');
+  choices <- reactiveValues(); revals <- reactiveValues(stage=0); refits <- reactiveValues();
+  ## refreeze is where a snapshot of certain variables is copied when the "Run Analysis" button is pressed
+  refreeze <- reactiveValues();
+
+  ## discover current URL (not sure whether it should point to clientData or session
+  rooturl<-isolate(paste0(session$clientData$url_protocol,'//',session$clientData$url_hostname,
+                          if(length(port<-session$clientData$url_port)>0) paste0(':',port) else "",
+                          session$clientData$url_pathname));
 ### data handling
-  ## Reactive functions run for their side-effect: updating the rawdat
-  ## the invisible spans are there mainly so the reactive statements have a reason to execute
-  ## However, could be useful for scripting because the span containing the larger number is the fresher dataset
-  ## triggers if user uploads a file
-  ## Might be replaced with an observe() call
-  output$udataread<-renderUI(if(!is.null(input$infile)){
-    revals$rawdat<-isolate(read.csv(input$infile$datapath,header=input$header,sep=input$sep,quote=input$quote));
+  ## built-in data chosen: stage 1
+  observe(if(!is.null(rbuiltin<-input$rbuiltin)&&rbuiltin!=' '){
+    ## obs_chosen$suspend();
+    ## obs_trndat$suspend();
+    obs_frm$suspend();
+    scrubrevals(revals); scrubrevals(choices); scrubrevals(refits);
+    revals$rawdat<-get(rbuiltin);
+    revals$stage <- 1;
+    logevent('c0002',sprintf('Researcher chose built-in dataset "%s"',rbuiltin));
+  },priority=-4);
+  
+  ## user-supplied data chosen: stage 1
+  observe(if(!is.null(infile<-input$infile)){
+    ## obs_chosen$suspend();
+    ## obs_trndat$suspend();
+    obs_frm$suspend();
+    scrubrevals(revals); scrubrevals(choices); scrubrevals(refits);
+    ## below read.csv was wrapped in isolate, now removed... will this cause bugs?
+    outcome<-try(revals$rawdat<-read.csv(datapath<-infile$datapath,header=header<-input$header,sep=sep1<-input$sep,quote=quote<-input$quote));
+    ## TODO: have input$sep use text.R and update it instead of directly changing the delimiter
+    if(class(outcome)[1]=='try-error'||ncol(outcome)<2){
+      outcome<-try(revals$rawdat<-read.csv(datapath,header=header,sep=sep2<-setdiff(c(',','\t',';'),sep1)[1],quote=quote));
+    };
+    if(class(outcome)[1]=='try-error'||ncol(outcome)<2){
+      outcome<-try(revals$rawdat<-read.csv(datapath,header=header,sep=sep3<-setdiff(c(',','\t',';'),c(sep1,sep2))[1],quote=quote));
+    };
+    ## TODO: log something if outcome is still an error
+    ## blank out the built-in dataset menu choice
+    updateSelectInput(session,'rbuiltin',choices=builtindatasetnames,selected=' ');
     ## TODO: generate fuzzy hashes
     ## TODO: data validation functions
-    revals$fits <- list();
-    logevent('c0001',sprintf('Researcher uploaded file "%s", of size %.0f k',input$infile$name,input$infile$size));
-    clearrevals();
-    span(id="udata",style="display: none;",as.numeric(Sys.time()));
-    ## blow away (or back up?) old values
-  });
-
-  ## triggers if user chooses a built in dataset from menu
-  output$bdataread<-renderUI(if(!is.null(input$rbuiltin)&&input$rbuiltin!=' '){
-    ## might want to trap missing data type errors here, and what? Maybe warn and continue awaiting an input dataset?
-    revals$rawdat<-get(input$rbuiltin);
-    revals$fits <- list();
-    logevent('c0002',sprintf('Researcher chose built-in dataset "%s"',input$rbuiltin));
-    clearrevals();
-    span(id="bdata",style="display: none;",as.numeric(Sys.time()));
-    ## blow away (or back up?) old values
-  });
-
-  ## update the choices ONLY if rawdat changes
+    ## what stage of the analysis we are now in
+    revals$stage <- 1;
+    logevent('c0001',sprintf('Researcher uploaded file "%s", of size %.0f k',infile$name,infile$size));
+  },priority=-4);
+  
+  ## whenever the raw data changes, populate choices
   observe(if(!is.null(rawdat<-revals$rawdat)){
+    cat('entering observe rawdat\n');
     options(warn=-1);
-    revals$datinfo<-info(rawdat);
-    revals$datvars <- possiblevars(rawdat,isolate(revals$datinfo));
+    revals$datinfo<-datinfo<-info(rawdat);
+    revals$datvars <- possiblevars(rawdat,datinfo);
     options(warn=0);
-    revals$ychoices <- isolate(revals$datvars$yvars);
-    revals$cchoices <- isolate(revals$datvars$cvars);
-    revals$tchoices <- isolate(c(revals$datvars$fvars,revals$datvars$nvars));
+    ## blow away and recreate fits
+    ## legal variable choices
+    choicesorig <- list();
+    choices$yvar <- choicesorig$yvar <- isolate(revals$datvars$yvars);
+    choices$cvar <- choicesorig$cvar <- isolate(revals$datvars$cvars);
+    choices$gvar <- choicesorig$gvar <- isolate(revals$datvars$gvars);
+    ## The next line has a temporary hack! Wrapping in intersect instead of using
+    ## fvars directly prevents factors with more than 2 levels from showing up until I can fix unicontr
+    choices$xvar <- choicesorig$xvar <- isolate(c(intersect(revals$datvars$fvars,subset(datinfo,nunique==2)$name),revals$datvars$nvars));
+    choices$tvar <- choicesorig$tvar <- isolate(c(revals$datvars$nvars,revals$datvars$fvars));
+    choices$svar <- choicesorig$svar <- isolate(revals$datvars$nvars);
+    choicesmissing <- setdiff(c('yvar','cvar','gvar','xvar','tvar','svar'),names(choicesorig));
+    isolate(if(length(choicesmissing)>0) {
+      reissue[['iw0001']] <- sprintf('The following choices were missing: "%s"',paste0(choicesmissing,collapse='","'));
+    } else reissue[['iw0001']] <- NULL);
+    revals$choicesorig <- choicesorig;
+    ## switch to the next tab
+    updateTabsetPanel(session,'tabset',selected='Model & Data');
     revals$filepath <- filepath <- tempfile(tmpdir='www/results',fileext='.rdata');
     revals$fileurl <- gsub('^www/','',filepath);
-    revals$fileid <- gsub('^www/results/|\\.rdata','',filepath);
-  });
+    revals$fileid <- fileid <- gsub('^www/results/|\\.rdata','',filepath);
+    cat(' resuming obs_trndat\n');
+    ## obs_trndat$resume();
+    cat('leaving observe rawdat\n');
+  },priority=-3);
 
-
-  ## (re)transform ONLY if rawdat, gchosen, tchosen, or schosen change
-  observe({
-    tchosen <- revals$tchosen; gchosen <- revals$gchosen; schosen <- revals$schosen;
+  ## transforming/sorting data when rawdat, gvar, tvar, or svar change
+  obs_trndat <- observe(
     if(!is.null(trndat <- revals$rawdat)){
-      if(length(tgint<-intersect(tchosen,gchosen))>0){
-        logevent('w0005',sprintf('"%s" is both a grouping variable and a time/ordering variable. This might be a mistake.',tgint));
+      cat('entering observe trndat\n');
+      ## might need to scrub them for ' '
+      tchosen <- setdiff(input$tvar,' '); gchosen <- setdiff(input$gvar,' '); schosen <- input$svar;
+      orderby<-unique(c(gchosen,tchosen));
+      if(length(sbanned<-intersect(orderby,schosen))>0){
+        schosen <- setdiff(schosen,orderby);
+        logevent('w0001',
+                 sprintf('The variable "%s" is not available for centering because it is an order or grouping variable.',
+                         paste0(sbanned,collapse='","')));
+        ## return();
       }
-      orderby<-c(gchosen,tchosen);
-      if(length(orderby)>0) trndat<-trndat[do.call(order,trndat[,orderby,drop=F]),];
-      if(length(schosen)>0&length(input$cmeth)==1) {
-        ctrs <- switch(input$cmeth,
+      datnames <- colnames(trndat);
+      if(length(orderby)>0 && length(intersect(orderby,datnames))==length(orderby)) {
+        logsortmsg <- sprintf('Ordering data by grouping and/or ordering variable/s "%s". ',paste0(orderby,collapse='","'));
+        trndat<-trndat[do.call(order,trndat[,orderby,drop=F]),];
+      } else logsortmsg <- 'Original order of data used. ';
+      cat(' checking whether to center\n');
+      if(length(schosen)>0 && length(svar_method<-input$svar_method)==1) {
+        cat('  choosing center method\n');
+        ctrs <- switch(svar_method,
                        Means=apply(trndat[,schosen,drop=F],2,mean,na.rm=T),
-                       Medians=apply(trndat[,schosen,drop=F],2,mean,na.rm=T),
+                       Medians=apply(trndat[,schosen,drop=F],2,median,na.rm=T),
+                       Minima=apply(trndat[,schosen,drop=F],2,min,na.rm=T),
                        rep(0,len=length(schosen)));
+        cat('  centering trndat\n');
+        logcentmsg <- sprintf('Centering columns "%s" by their %s. ',paste0(schosen,collapse='","'),tolower(svar_method));
         trndat[,schosen] <- trndat[,schosen]-rbind(ctrs)[rep(1,len=nrow(trndat)),];
+        cat('  done centering trndat\n');
+      } else logcentmsg <- 'No columns in the data were centered. ';
+      if(!identical(isolate(revals$trndat),trndat)) {
+        cat('  updating trndat\n');
+        revals$trndat <- trndat;
+        logevent('c0003',logfinalmsg<-paste(logsortmsg,logcentmsg,collapse='  '));
+        isolate(reissue[['ic0001']]<-logfinalmsg);
       }
-      revals$trndat <- trndat;
-    }
+      cat('resuming obs_chosen\n');
+      ## obs_chosen$resume();
+      cat('leaving observe trndat\n');
+    },priority=2,suspended=F);
+
+  ## let conditional UI elements know that there is a dataset loaded
+  output$dataloaded <- renderUI(if(!is.null(revals$trndat)) span(style="display: none;",as.numeric(Sys.time())) else "");
+  ## ...that svar/tvar menus can be displayed
+  output$scale_time <- renderUI({
+    lsvar<-length(choices$svar);
+    ltvar<-length(choices$tvar);
+    list(
+      span(id='sready',style="display: none;",lsvar),
+      span(id='tready',style="display: none;",ltvar)
+      )
   });
-  
-  ## widgets.R
+
+### widgets
   source('widgets.R',local=T);
-  
 
-  ## observers.R
-  source('observers.R',local=T);
+  output$modeltype <- renderUI(if(length(modeltype<-refreeze$modeltype)>0) span(style="display: none;",modeltype) else span(""));
+
+  output$zphplot <- renderImage({
+    zphrange <- input$zphrange;
+    ## if(!is.null(input$zphresid)) browser();
+    ## zphresid1 <- isolate(revals$zphresid1);
+    ## revals$zphresid1 <- zphresid0 <- input$zphresid$x;
+    if(class(zph<-revals$zph)[1]=='cox.zph'){
+      ## residbounds <- c(zphresid0,zphresid1);
+      ## dobounds <- length(residbounds)>0;
+      if(length(zphrange)>0) zphbounds <- quantile(zph$x,zphrange);
+      znr <- isolate(revals$znr);
+      outfile <- tempfile(fileext='.png');
+      png(outfile,width=wt<-400,height=ht<-znr*400+1);    
+      layout(matrix(seq.int(znr),nrow=znr));
+      zmeds <- apply(zph$y,2,median);
+      zmeans <-colMeans(zph$y);
+      for(ii in seq.int(znr)) {
+        plot(zph[ii],cex=15); medline<-median(c(zmeds[ii],zmeans[ii],median(par('usr')[3:4]))); abline(h=medline,col='red');
+        if(length(zphrange)>0) abline(v=zphbounds,col='blue');
+      }
+      dev.off();
+      list(src=outfile,width=wt,height=ht);
+      ## coxaic <- cox.zph(fitaic); coxidx <- which.min(coxaic$table[,'p']);
+      ## revals$zcoxrng <- range(coxaic[coxidx]$y);
+      ## visualres(coxaic[coxidx]);
+    }});
+  ## } else plot(0),height=function() 1+if(length(znr<-isolate(revals$znr))>0) znr*600 else 0);
   
-### plotting
-  ## functions that generate descriptive plots pre-analysis
-  ## functions that generate interactive diagnostic plots
-  ## DONE: put zph into its own renderplot
-  ## TODO: sliders for zph
-  ## TODO: update resplotabs and resplotqq to same structure as resplot
-  ## zphspan lets the conditional panels know which diagnostic plots should be shown-- coxph or lm/lme
-  output$zphspan <- renderUI(if(class(revals$fits$fitaic)[1]=='coxph') span(id="zphspan",style="display: none;",as.numeric(Sys.time())) else NULL);
-  output$zphplot <- renderPlot(if((fitclass<-class(fitaic <- revals$fits$fitaic)[1])=='coxph'){
-    coxaic <- cox.zph(fitaic); coxidx <- which.min(coxaic$table[,'p']);
-    revals$zcoxrng <- range(coxaic[coxidx]$y);
-    visualres(coxaic[coxidx]);
+  output$resplot <- renderPlot(if(length(refits$fitaic)>0 && isolate(revals$modeltype!='coxph')){
+    resid <- isolate(revals$resid); fitted<-isolate(revals$fitted);
+    visualres(resid,fitted,type='direct',xlab='Estimated Response',ylab='Standardized');
   });
 
-  output$resplot <- renderPlot(if((fitclass<-class(fitaic <- revals$fits$fitaic)[1])%in%c('lm','lme')){
-    hataic <- fitted(fitaic);
-    switch(fitclass,
-           lm =  { residaic <- rstudent(fitaic);
-                   visualres(residaic,hataic,type='direct',xlab=paste('Estimated',isolate(revals$ychosen)),ylab='Studentized');
-                 },
-           lme = { residaic <- residuals(fitaic,type='pearson');
-                   visualres(residaic,hataic,type='direct',xlab=paste('Estimated',isolate(revals$ychosen)),ylab='Pearson');
-                 },
-           {plot(NA,ylim=0:1,xlim=0:1,type='n',axes=F,xlab=NA,ylab=NA); text(.5,.5,'Error: unsupported model type')})});
-
-
-  output$resplotabs <- renderPlot(if(!is.null(fitaic <- revals$fits$fitaic)){    
-    hataic <- fitted(fitaic);
-    if(class(fitaic)[1]=='lm') {
-      residaic <- rstudent(fitaic);
-      visualres(residaic,hataic,type='abs',xlab=paste('Estimated',isolate(revals$ychosen)),ylab='Studentized');
-    } else if(class(fitaic)[1]=='lme'){
-      residaic <- residuals(fitaic,type='pearson');
-      visualres(residaic,hataic,type='abs',xlab=paste('Estimated',isolate(revals$ychosen)),ylab='Pearson');
-    }
+  output$resplotabs <- renderPlot(if(length(refits$fitaic)>0 && isolate(revals$modeltype!='coxph')){
+    resid <- isolate(revals$resid); fitted<-isolate(revals$fitted);
+    visualres(resid,fitted,type='abs',xlab='Estimated Response',ylab='Standardized');
   });
 
-  output$resplotqq <- renderPlot(if(!is.null(fitaic <- revals$fits$fitaic)){
-    hataic <- fitted(fitaic); qqrange <- input$qqrange;
-    revals$qqrng_temp <- range(qnorm(ppoints(nobs<-length(hataic))));
-    revals$nobs <- nobs;
-    if(class(fitaic)[1]=='lm') {
-      residaic <- rstudent(fitaic);
-      visualres(residaic,hataic,type='qq',ylab='Studentized');
-    } else if(class(fitaic)[1]=='lme'){
-      residaic <- residuals(fitaic,type='pearson');
-      visualres(residaic,hataic,type='qq',ylab='Pearson');
-    }
+  output$resplotqq <- renderPlot(if(length(refits$fitaic)>0 && isolate(revals$modeltype!='coxph')){
+    resid <- isolate(revals$resid); fitted<-isolate(revals$fitted); qqrange <- input$qqrange;
+    ## qqrange_temp <- range(qnorm(ppoints(nobs<-length(fitted))));
+    visualres(resid,fitted,type='qq',ylab='Studentized');
     if(length(qqrange)>0) abline(v=qqrange,col='blue');
   });
 
-       ##   output$resacf <- renderImage({
-       ##     browser();
-       ##   # A temp file to save the output. It will be deleted after renderImage
-       ##   # sends it, because deleteFile=TRUE.
-       ##   outfile <- tempfile(fileext='.png')
-     
-       ##   # Generate a png
-       ##   png(outfile, width=400, height=400)
-       ##   hist(rnorm(20))
-       ##   dev.off()
-     
-       ##   # Return a list
-       ##   list(src = outfile,
-       ##        alt = "This is alternate text")
-       ## }, deleteFile = TRUE)
-     
-
-  output$resacf <- renderImage(if(length(isolate(revals$tchosen))>0&&(fitclass<-class(fitaic<-revals$fits$fitaic)[1])%in%c('lm','lme')){
-    cat('Starting resacf\n');
-    print(fitclass);
-    outfile <- tempfile(fileext='.png');
-    png(outfile,width=400,height=400);
-    acfplot<- switch(fitclass,
-           lm =  { residaic <- rstudent(fitaic);
-                   acfplot<-try(acf(residaic)); dev.off(); acfplot;
-                 },
-           lme = try(ACF(fitaic)));
-    if(class(acfplot)[1]!='try-error'){
-      dev.set(2);
-      plot(acfplot);
-      print(outfile);
-      dev.off();
-      return(list(src=outfile,alt='Autocorrelation'));
-    } else return(NULL);
-  },deleteFile=T);
+  output$stage <- renderUI(span(id='stage',style='display: none;',revals$stage));
 
 
+### observers
+  source('observers.R',local=T);
 
-  ## The following will work on any client R session even now with the link created by this app (while the session is running):
-  ## load(rawConnection(getBinaryURL("http://localhost:8100/session/5ff4072ca099abbf37d7d1131ba7cd9f/download/download")))
-  
-  ## output$mqqslider <- renderUI(if(length(qqrng_temp<-revals$qqrng_temp)>0){
-  ## });
-  ## functions that plot results
-  ### diagnostic user response
-  ## functions that read user input from diagnostic plots (loggable issues can happen here)
-### cleanup 
-  ## functions for creating downloads
-  ## functions for debug output
-});
-
-
-## To implement required interactions:
-  ## have another (multi=T) selectInput, this one containing only the names of cm that were chosen above
-  ## the one that are chosen this time around determine which interactions must be in the model; let's say they are called ckeep, then...
-  ## paste(unique(unlist(sapply(revals$cm[input$ckeep],function(ii) attr(revals$cm,'contrinfo')$term[apply(ii[-1,],2,function(jj) length(unique(jj))>1)]))),collapse="+")
-  ## ...returns a set of "+" delimited terms to which a ".~.+" can be prepended to create a formula with which to update the additive model prior to AIC
+  ## residual responses
+  ## we don't log issues here, though. We do them once, during finalize
+  observe({
+    ## collect the residual inputs
+    zphrange <- input$zphrange;
+    resids <- list(trend=input$trend,nonlin=input$nonlin,abstrend=input$abstrend,absnonlin=input$absnonlin,qqldir=input$qqldir,qqrdir=input$qqrdir);
+    qqrange <- input$qqrange;
+    ready <- F; stage <- isolate(revals$stage);
+    if(is.numeric(stage) && stage>=3){
+      if((modeltype<-isolate(revals$modeltype))=='coxph'){
+        if(length(intersect(zphrange,c(.49,.51)))==0) ready <- T;
+      } else if(modeltype %in% c('lm','lme')){
+        if(all(resids!=' ') && length(intersect(qqrange,c(-.05,.05)))==0) ready <- T;
+      };
+      ## if all the questions about residuals have been answered, we unlock stage 4
+      ## if any questions get un-answered, we unset residsdone
+      if(ready) {
+        revals$residsdone <- 1;
+        if(stage < 4) revals$stage <- 4;
+      } else revals$residsdone <- NULL;
+    }});
+});  
+cat('\n\nDone starting shinyserver\n');

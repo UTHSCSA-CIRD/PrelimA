@@ -1,17 +1,208 @@
-### functions that read input from variable menus (loggable issues can happen here)
+## save session results
+observe({
+  if(!is.null(final<-input$final) && final!=0){
+    ## technically should check to make sure length(log)>1 to avoid errors,
+    ## but user shouldn't be able to press this button without having caused more than 1 logged event
+    ## TODO: log the residual responses
+    if(isolate(revals$modeltype)=='coxph'){
+      zphrange <- isolate(input$zphrange);
+      zphbounds <- quantile(isolate(revals$zph$x),zphrange);
+      ## if diff(zphrange) < .7 look extra close at zph
+      if((zphdiff<-diff(zphrange)) < .7) {
+        isolate(reissue[['iw0010']]<-sprintf(
+                                       'Researcher reported that hazards look proportional in a time interval that spans only %s of the range of the data.',
+                                       zphdiff));
+      } else isolate(reissue[['iw0010']] <- NULL);
+      ## report zphrange either way
+      isolate(reissue[['ic0010']] <- sprintf(
+                                       'Researcher reported that hazards look proportional in the time interval between %.0f and %.0f',
+                                       zphbounds[1],
+                                       zphbounds[2]));
+      isolate(reissue[['iw0011']]<-NULL); isolate(reissue[['ic0012']]<-NULL); isolate(reissue[['ic0013']]<-NULL);
+      isolate(reissue[['iw0014']]<-NULL); isolate(reissue[['ic0015']]<-NULL); 
+    } else {
+      ## capture ('trend','nonlin','abstrend','absnonlin','qqldir','qqrdir')
+      trend <- isolate(input$trend); nonlin <- isolate(input$nonlin); abstrend <- isolate(input$abstrend); absnonlin <- isolate(input$absnonlin);
+      qqldir <- switch(isolate(input$qqldir),Above='thinner',Below='thicker');
+      qqrdir <- switch(isolate(input$qqrdir),Above='thicker',Below='thinner');
+      qqrange <- isolate(input$qqrange);
+      if(trend != 'Approximately Flat') {
+        isolate(reissue[['iw0011']] <- sprintf('Researcher describes the shape of the standardized residuals plotted against fitted values as "%s"',trend));
+      } else isolate(reissue[['iw0011']] <- NULL);
+      if(nonlin == 'Yes') {
+        isolate(reissue[['iw0012']] <- 'Researcher thinks the residuals standardized plotted against fitted values might have a non-linear trend.');
+      } else isolate(reissue[['iw0012']] <- NULL);
+      if(abstrend != 'Approximately Flat') {
+        isolate(reissue[['iw0013']] <- sprintf('Researcher describes the shape of the absolute standardized residuals plotted against fitted values as "%s"',trend));
+      } else isolate(reissue[['iw0013']] <- NULL);
+      if(absnonlin == 'Yes') {
+        isolate(reissue[['iw0014']] <- 'Researcher thinks the absolute standardized residuals plotted against fitted values might have a non-linear trend.');
+      } else isolate(reissue[['iw0014']] <- NULL);
+      isolate(reissue[['iw0015']] <- sprintf(
+                                       'Researcher reports that for the standardized residuals the left tail is %s and the right tail is %s than they would be if they were precisely normal. The researcher says the tails diverge from normality at the %.2f and %.2f quantiles respectively.',
+                                       qqldir, qqrdir, qqrange[1], qqrange[2]));
+      isolate(reissue[['iw0010']]<-NULL); isolate(reissue[['ic0010']]<-NULL);
+    }
+    log<-do.call(rbind,isolate(reactiveValuesToList(relog)));
+    issues<-do.call(rbind,isolate(reactiveValuesToList(reissue)));
+    fits<-isolate(reactiveValuesToList(refits));
+    trndat <- isolate(revals$trndat);
+    revals_list<-isolate(reactiveValuesToList(revals));
+    save(log,lmec,fits,trndat,revals_list,.Random.seed,file=isolate(revals$filepath),compress='xz');
+    revals$downloadready <- T;
+    if(is.numeric(stage<-isolate(revals$stage)) && stage < 5) revals$stage <- 5;
+    cat('Saved session!\n');
+  } else revals$downloadready <- F});
+
+## once we put the residual plost back in, refits$fitaic will be wrapped in isolate. Maybe.
+## This creates a contrast matrix specifically for the model that was selected
+## If there were no user or algorithm sepcified contrasts, fitcm is set to 0 so that it will pass the NULL check
+## but still be distinguishable from an actual matrix
+observe(if(length(fitaic<-(refits$fitaic))>0){
+  ## lazy way to get variable names. Might break for coxph
+  ## doesn't seem to break...
+  termnames <- try(as.character(unifx(fitaic)$Term));
+  if(class(termnames)[1]=='try-error' && debugmode) browser();
+  cm <- isolate(revals$cm);
+  revals$fitcm<-if(length(cm)>0) {
+    do.call(rbind,lapply(isolate(cm[-1]),function(ii) {
+      oo<-ii[,termnames];if(length(oo)>0&&nrow(unique(oo[-1,,drop=F]))>1) oo}));
+  } else 0;
+});
+
+## DONE: observer that constructs a minimal model when input$contr changes
+## DONE: why does changing contr and clicking analysis sometimes not do anything?
+observe({
+  cat('\n\nentering observe frmcon\n');
+  frm <- isolate(revals$frm);
+  if(length(contr <- input$contr)>0){
+    cat('  updating starting model\n');
+    cm <- isolate(revals$cm);
+    ## currently running with debug option that will browse() on error
+    frmcon <- minmodel(contr,frm,cm,debug=T);
+    revals$frmcon <- frmcon;
+  } else if(length(frm)>0) {
+    cat('  simple additive starting model\n');
+    revals$frmcon <- frm } else {
+    cat('  starting model set to NULL\n');
+    revals$frmcon <- NULL;
+  }
+  cat('\nleaving observe frmcon\n');
+});
+
+
+## these observers update the menus and are invalidated when their respective objects in choices change
+obs_upd_yvar<-observe(updateSelectInput(session,'yvar',choices=c(' ',choices$yvar),selected=isolate(input$yvar)));
+obs_upd_cvar<-observe(updateSelectInput(session,'cvar',choices=c(' ',choices$cvar),selected=isolate(input$cvar)),suspended=T);
+obs_upd_gvar<-observe(updateSelectInput(session,'gvar',choices=c(' ',choices$gvar),selected=isolate(input$gvar)),suspended=T);
+obs_upd_xvar<-observe({
+  if(length(choices <- choices$xvar)==0) choices <- ' ';
+  selected <- isolate(input$xvar);
+  updateSelectInput(session,'xvar',choices=choices,selected=selected);
+  ## session$sendInputMessage('xvar', list(options=list(list(value=selected,label=selected,selected=T))));
+},suspended=T);
+obs_upd_tvar<-observe(updateSelectInput(session,'tvar',choices=c(' ',choices$tvar),selected=isolate(input$tvar)),suspended=T);
+obs_upd_svar<-observe({
+  if(length(choices <- choices$svar)==0) choices <- ' ';
+  updateSelectInput(session,'svar',choices=choices,selected=isolate(input$svar));
+},suspended=T);
+obs_upd_rvar<-observe({
+  if(length(choices <- choices$rvar)==0) choices <- ' ';
+  updateSelectInput(session,'rvar',choices=choices,selected=choices);
+},suspended=T);
+## contrasts
+obs_upd_contr <- observe({
+  if(length(choices <- names(revals$cm)[-1])==0) choices <- ' ';
+  updateSelectInput(session,'contr',choices=choices);
+},suspended=T);
+
+
+## observer that checks for anything variable choices changing, at which point it decides what in revals choices should change
+obs_chosen <- observe({
+  cat('entering observe chosen\n');
+  ## browser();
+  chosen <- list(yvar=input$yvar,cvar=input$cvar,gvar=input$gvar,xvar=input$xvar);
+  chosennoblanks <- sapply(chosen,setdiff,' ');
+  ## if both y and x chosen, stage 2
+  if(is.numeric(stage <- isolate(revals$stage)) && stage < 2 && length(chosennoblanks$yvar) > 0 && length(chosennoblanks$xvar) > 0) revals$stage <- 2;
+  tchosen <- input$tvar; tchosennoblanks <- setdiff(tchosen,' ');
+  if(!is.null(isolate(revals$trndat))) {
+    choicescurr <- isolate(reactiveValuesToList(choices));
+    choicesorig <- isolate(revals$choicesorig);
+    chosenold <- isolate(revals$chosenold);
+    rvarchoices <- NULL;
+    ## no point in running the checks if no new choices have been made in y,c,g,x
+    if(!identical(chosen,chosenold)){
+      ## grouped survival data not currently supported, will treat as plain survival data
+      ## if(length(chosennoblanks$cvar)>0&&length(chosennoblanks$gvar)>0) {
+      ##   reissue[['iw0002']] <- sprintf('Grouping variable "%s" and censoring variable "%s" both specified',chosen$gvar,chosen$cvar);
+      ## } else reissue[['iw0002']] <- NULL;
+      taken <- unlist(chosennoblanks); #taken <- taken[taken!=' '];
+      ## for y,c,g,x... this has important side effects and isn't just for logging, the logmsg is just for brevity
+      logmsg <- sapply(names(chosen), function(ii) {
+        ## if you already chose it you get dibs on keeping it
+        iimask <- setdiff(taken,chosen[[ii]]);
+        ## remove the items other variables have dibs on
+        iichoices <- choicesorig[[ii]][!choicesorig[[ii]]%in%iimask];
+        ## if this results in a different set of choices than currently available, update them
+        if(!vequal(iichoices,choicescurr[[ii]])) choices[[ii]] <- iichoices;
+        sprintf('%s="%s"',ii,paste0(chosen[[ii]],collapse='","'));
+      });
+      logevent('c0002',paste(logmsg,collapse='; '));
+      if(length(chosen$gvar)>0 && !vequal(chosen$gvar,chosenold$gvar) && !vequal(
+                                                                            choicescurr$rvar,
+                                                                            rvarchoices <- setdiff(
+                                                                                             isolate(revals$datvars$rvars[[chosen$gvar]]),
+                                                                                             ## deliberately omitted chosen$gvar because datvars would not permit it anyway
+                                                                                             c(chosen$yvar,chosen$cvar)))) {
+        choices$rvar <- rvarchoices;
+        ## rvar needs to be logged from a separate observer, whenever rchoices gets updated here,
+        ## input$rvar will immediately default to all rchoices selected
+        obs_upd_rvar$resume();
+      } else obs_upd_rvar$suspend();
+      revals$chosenold <- chosen;
+    };
+    ## TODO: maybe have svar available only for intersect(xvar,rvar)?
+    if(length(chosen$xvar)+length(intersect(isolate(choices$rvar),isolate(input$rvar)))>0){
+      tchoices <- choicesorig$tvar[choicesorig$tvar != chosen$yvar];
+      if(!vequal(tchoices,choicescurr$tvar)) {
+        choices$tvar <- tchoices;
+        obs_upd_tvar$resume();
+      }
+      schoices <- choicesorig$svar[!choicesorig$svar %in% c(chosen$yvar,chosen$cvar,chosen$gvar,tchosen)];
+      if(!vequal(schoices,choicescurr$svar)) {
+        choices$svar <- schoices;
+        obs_upd_svar$resume();
+      }
+    } #else {obs_upd_tvar$suspend(); obs_upd_svar$suspend();}
+    if(length(chosennoblanks$yvar)>0&&length(chosennoblanks$xvar)>0){
+      obs_frm$resume();
+    } else obs_frm$suspend();
+    obs_upd_yvar$resume();
+    obs_upd_cvar$resume();
+    obs_upd_gvar$resume();
+    obs_upd_xvar$resume();
+  }
+  cat('leaving observe chosen\n');
+});
+
 ## function that constructs a formula, identifies the model type, and creates a cm object (loggable issues can happen here)
 ## modeltype,frm,(rfrm),(frmcon),(cm)
-observe({
-  cchosen<-revals$cchosen; gchosen<-revals$gchosen; ##rchosen<-revals$rchosen; 
-  if(!is.null(ychosen<-revals$ychosen)&&length(xchosen<-revals$xchosen)>0){
+obs_frm <- observe({
+  cat('entering obs_frm\n');
+  ychosen <- setdiff(input$yvar,' '); cchosen<-setdiff(input$cvar,' '); xchosen <- input$xvar;
+  gchosen <- setdiff(input$gvar,' '); #rchosen <- input$rvar;
+  if(length(ychosen)>0 && length(xchosen)>0){
+    cat(' creating model parts\n');
     rhs <- paste(xchosen,collapse="+"); lhs <- ychosen; rfrm.char <- rfrm <- cm <- NULL;
-    if(!is.null(cchosen)){
+    cat(' identifying model type\n');
+    if(length(cchosen)>0){
       ## coxph
       modeltype <- "coxph";
       lhs <- sprintf("Surv(%s,%s==1)",ychosen,cchosen);
       ## logevent('c0015','Cox proportional hazard model auto-selected');
       ## cat('CPH case: ');
-    } else if(!is.null(gchosen)){
+    } else if(length(gchosen)>0){
       ## lme
       modeltype <- "lme";
       lmec<-getOption('steprand.lmec',lmeControl(opt='optim',maxIter=100,msMaxIter=100,niterEM=50,msMaxEval=400));
@@ -25,333 +216,196 @@ observe({
       ## logevent('c0015', 'Ordinary least-squares model auto-selected');
       ## cat('LM case: ');
     }
+    cat(' pasting together formula\n');
+    ## browser();
     frm.char <- paste(lhs,"~",rhs); 
     frm <- as.formula(frm.char); environment(frm)<-NULL;
     ## logevent('c0016',paste('The model selection will start with the following formula:',frm.char));
     ## print(frm.char);
     ## if any of the formula info has actually changed, update it
+    cat(' checking to see if revals needs updating\n');
     if(!isTRUE(all.equal(isolate(revals$modeltype),modeltype))) revals$modeltype <- modeltype;
     if(!isTRUE(all.equal(isolate(revals$rfrm.char),rfrm.char))){
       revals$rfrm.char <- rfrm.char; revals$rfrm <- rfrm;
     };
     if(!isTRUE(all.equal(isolate(revals$frm.char),frm.char))){
-      revals$frm.char <- frm.char; revals$frm <- frm; revals$frmcon <- revals$frmcon;
+      ## we set frmcon to frm instead of NULL here
+      revals$frm.char <- frm.char; revals$frm <- frm; revals$frmcon <- frm; #revals$frmcon <- isolate(revals$frmcon);
       ## if the formula has changed AND there is more than 1 X AND at least one X is a factor,
       ## generate a new cm (a unicontr object)
-      if(length(xchosen>1)&&length(intersect(xchosen,isolate(revals$datvars$fvars)))>0){
-        cm <- unicontr(frm,data=isolate(revals$trndat));
-      };
+      ## TODO: bug, unicontr breaks if a factor has more than 2 levels
+      cm <- try(if(length(xchosen>1)&&length(intersect(xchosen,isolate(revals$datvars$fvars)))>0){
+        unicontr(frm,data=isolate(revals$trndat),debug=T);
+      } else NULL);
+      if(class(cm)[1]=='try-error' && debugmode) browser();
       ## update revals$cm if necessary
       if(!isTRUE(all.equal(isolate(revals$cm),cm))) revals$cm <- cm;
     };
+    obs_upd_contr$resume();
   } else {
     ## if not enough information for model, blow away the outputs
+    cat(' NULL-ing out revals\n');
     revals$modeltype <- NULL; revals$frm.char <- NULL; revals$frm <- NULL; revals$frmcon <- NULL; revals$cm <- NULL;
+    revals$rfrm.char <- NULL; revals$rfrm <- NULL;
   };
-},label='omod');
-## yvar
-observe({yvar<-input$yvar;if(is.null(isolate(revals$init$myvar))){
-  ecomment <- c();
-  if(!is.null(yvar)&&yvar!=' '&&!isTRUE(all.equal(yvar,isolate(revals$ychosen)))){
-    revals$ychosen <- yvar;
-    ecomment<-sprintf('Researcher indicated that "%s" is the response variable',yvar);
-  } else if(is.null(yvar)||yvar==' ') {
-    if(!is.null(isolate(revals$ychosen))) ecomment <-'Researcher set the response variable to NULL';
-    revals$ychosen <- NULL;
-  }
-  if(length(ecomment>0)) {
-    logevent('c0004',ecomment);
-    ## cat('yvar calling updatemenus\n');
-  }
-  updatemenus();
-} else revals$init$myvar<-NULL},label='oyvar');
+  cat('leaving obs_frm\n');
+},suspended=T,label='obs_frm',priority=3);
 
-## cvar 
-observe({cvar<-input$cvar; if(is.null(isolate(revals$init$mcvar))&&!is.null(isolate(revals$ychosen))){
-  ecomment <- c();
-  if(!is.null(cvar)&&cvar!=' '&&!isTRUE(all.equal(cvar,isolate(revals$cchosen)))){
-    revals$cchosen <- cvar;
-    ecomment<-sprintf('Researcher indicated that "%s" is a censoring variable, implying that these are survival/time-to-event data.',cvar);
-    ## catch issue
-    if(!is.null(isolate(revals$gchosen))) {
-      logevent('w0001','Both a censoring and a grouping/blocking variables have been chosen, implying that these are survival/time-to-event data with a clustering, frailty, or strata term. However, such models are not currently supported by this app and an ordinary Cox model will be used');
-    }
-  } else if(is.null(cvar)||cvar==' ') {
-    if(length(isolate(revals$cchosen))>0) ecomment<-'Researcher indicated that there is no censoring variable, implying that these are not survival/time-to-event data.';
-    revals$cchosen <- NULL;
-  }
-  if(length(ecomment>0)) logevent('c0005',ecomment);
-  cat('cvar calling updatemenus\n');
-  updatemenus();
-} else revals$init$mcvar<-NULL},label='ocvar');
-
-## gvar
-observe({gvar<-input$gvar; if(is.null(isolate(revals$init$mgvar))&&!is.null(isolate(revals$ychosen))>0){
-  ecomment <- c();
-  if(!is.null(gvar)&&gvar!=' '&&!isTRUE(all.equal(gvar,isolate(revals$gchosen)))){
-    revals$gchosen <- gvar;
-    ecomment<-sprintf('Researcher indicated that "%s" is a grouping/blocking variable, implying that a mixed-effect model should be used.',gvar);
-    if(!is.null(isolate(revals$cchosen))) {
-      logevent('w0001','Both censoring and grouping/blocking variables have been chosen, implying that these are survival/time-to-event data with a clustering, frailty, or strata term. However, such models are not currently supported by this app and an ordinary Cox model will be used');
-    }
-  } else if(is.null(gvar)||gvar==' ') {
-    if(length(isolate(revals$gchosen))>0) ecomment<-'Researcher removed the grouping/blocking variable, implying that a mixed-effect model should not be used.';
-    revals$gchosen <- NULL;
-  }
-  if(length(ecomment>0)) logevent('c0006',ecomment);
-  cat('gvar calling updatemenus\n');
-  updatemenus();
-} else revals$init$mgvar<-NULL},label='ogvar');
-
-## rvars
-observe({rvars<-input$rvars; if(is.null(isolate(revals$init$mrvars))){
-  ## myrvars <- input$rvars;
-  if(length(gchosen<-isolate(revals$gchosen))>0){
-    cat('gchosen is ',gchosen,' in line 423\n');
-    rchosen <- isolate(revals$rchosen);
-    ## revals$rchosen.prev <- myrchosen <- isolate(revals$rchosen);
-    ## if(length(myrvars)>0&&!isTRUE(tryCatch(all.equal(sort(myrvars),sort(myrchosen)),warning=function(e){}))){
-    if(!isTRUE(tryCatch(all.equal(sort(rvars),sort(rchosen)),warning=function(e){}))){
-      revals$rchosen <- rvars; cat('Setting rchosen to ',paste(rvars,collapse=','),', line 428 \n');
-      ecomment <- '%s"%s" have been manually excluded from consideration for random slopes/interactions';
-      ecomment <- if(length(runchosen <- setdiff(isolate(revals$rchoices),rvars))>0) {
-        sprintf(ecomment,"Variables ",paste(runchosen,collapse='","'));
-      } else sprintf(ecomment,"No variables","");
-      logevent('c0008',ecomment)}}
-  ## } else if(length(myrvars)==0) {
-  ##   if(length(isolate(revals$rchosen))>0) logevent('c0008','All variables have been manually excluded from consideration for random slopes/interactions.');
-  ##   revals$rchosen <- NULL; cat('Setting rchosen to NULL, line 439\n');
+## core model selection and fitting function
+observe(if(!is.null(runanalysis<-input$runanalysis) && runanalysis!=0 && length(frmcon<-isolate(revals$frmcon))>0){
+  cat('entering obs_analysis\n');
+  logevent('c0004',sprintf('Researcher indicated readiness to proceed with analysis. So far %d analyses (including this one) have been attempted on the same data',runanalysis));
+  ## start final check
+  ## look for problems in variable selection, etc. and record them to the issues list
+  tvar <- isolate(input$tvar); cvar <- isolate(input$cvar); gvar <- isolate(input$gvar);
+  if(cvar != ' ' && gvar != ' ') {
+    isolate(reissue[['iw0002']] <- sprintf('Grouping variable "%s" and censoring variable "%s" both specified',gvar,cvar));
+  } else isolate(reissue[['iw0002']] <- NULL);
+  if(tvar != ' '){
+    if(cvar == tvar) {
+      isolate(reissue[['iw0003']]<-sprintf('"%s" is both a censoring and an ordering variable',tvar));
+    } else isolate(reissue[['iw0003']] <- NULL);
+    if(gvar == tvar) {
+      isolate(reissue[['iw0004']] <- sprintf('"%s" is both a grouping and an ordering variable',tvar));
+    } else isolate(reissue[['iw0004']] <- NULL);
+  } else {isolate(reissue[['iw0003']] <- NULL); isolate(reissue[['iw0004']] <- NULL);}
+  if(isolate(input$gvarmulti)) {
+    isolate(reissue[['iw0005']] <- 'Multiple grouping variables but only one of them is in the model.');
+  } else isolate(reissue[['iw0005']] <- NULL);
+  if(isolate(input$tvarmulti)) {
+    isolate(reissue[['iw0006']] <- 'Multiple time/order variables but only one of them is in the model.');
+  } else isolate(reissue[['iw0006']] <- NULL);
+  ## done final check
+  refreeze$modeltype <- modeltype <- isolate(revals$modeltype);
+  refreeze$frmcon <- frmcon;
+  frmcon.char <- paste(as.character(frmcon)[c(2,1,3)],collapse=' ');
+  ## starting formula
+  ## the non-reanalyzing bug was here!
+  ## frmcon <- if(length(isolate(revals$frmcon))==0) frmcon <- frm else {
+  ##   refreeze$frmcon <- frmcon <- paste0(setdiff(capture.output(frm),"NULL"),collapse="");
   ## }
-} else revals$init$mrvars<-NULL;},label='orvar');
-
-## xvars
-observe({xvars<-input$xvars; if(is.null(isolate(revals$init$mxvars))){
-  ecomment <- c();
-  if(length(xvars)>0&&!isTRUE(tryCatch(all.equal(sort(xvars),isolate(sort(revals$xchosen))),warning=function(e){}))){
-    revals$xchosen <- xvars;
-    ecomment <- sprintf('Researcher indicated that the explanatory variables are: "%s"',paste(xvars,collapse="\",\""));
-  } else if(length(xvars)==0) {
-    if(length(isolate(revals$xchosen))>0) ecomment <- 'Researcher removed all explanatory variables.';
-    revals$xchosen <- NULL;
-  }
-  if(length(ecomment)>0) logevent('c0010',ecomment);
-} else revals$init$mxvars <- NULL;},label='oxvar');
-
-## tvar
-observe({tvar<-input$tvar; if(is.null(isolate(revals$init$mtvar))){
-  if(!is.null(tvar)&&tvar!=' '&&!isTRUE(all.equal(tvar,isolate(revals$tchosen)))){
-    revals$tchosen <- tvar;
-    logevent('c0009',sprintf('Researcher indicated that the variable "%s" contains information about the order in which the observations were made.',tvar));
-    ## DONE: check for and LOG overlap between tchosen and cchosen or gchosen
-    ## these don't per-se cause a problem, but will usually result in meaningless ACF results and may indicate user confusion
-  } else if((length(tvar)==0||tvar==' ')&&length(isolate(revals$tchosen))>0) {
-    revals$tchosen <- NULL; logevent('c0009','Researcher indicated that none of the variables contain information about the order in which t he observations were made.');
-  }
-  ## cat('tvar calling updatemenus\n');
-  ## updatemenus();
-} else revals$init$mtvar <- NULL;},label='otvar');
-
-## cmeth
-observe(if(!is.null(cmeth<-input$cmeth)&&cmeth!='Do not center'&&length(schosen<-isolate(revals$schosen))>0) {
-  cat('cmeth calling updatemenus\n');
-  updatemenus();
-  logevent('c0003e',sprintf('Researcher chose to center variable/s "%s" by subtracting their respective %s.',
-                            paste(schosen,collapse='","'),tolower(cmeth)))
-} else if(length(cmeth)==1&&cmeth=='Do not center') logevent('c0003e','Researcher has chosen not to center any variables.'),label='cmvar');
-
-## svars
-observe({svars <- input$svars; cmeth <- input$cmeth; if(is.null(isolate(revals$init$msvars))){
-  ## if(length(input$svars)>0&&!isTRUE(tryCatch(all.equal(sort(input$svars),isolate(sort(revals$schosen))),warning=function(e){}))){
-  ##   revals$schosen <- input$svars;
-  ## } else if(length(input$svars)==0) revals$schosen <- NULL;
-  if(!isTRUE(tryCatch(all.equal(sort(svars),isolate(sort(revals$schosen))),warning=function(e){}))){
-    revals$schosen <- svars;
-    if(length(svars)>0) {
-      logevent('c0003a',
-               sprintf('Researcher chose to center variable/s "%s" by subtracting their respective %s. If any other variables have been previously centered, they have been restored to their original form.',
-                       paste(svars,collapse='","'),tolower(cmeth)))
-    } else if(length(svars)==0&&length(revals$xchosen)>0&&!is.null(cmeth)&&cmeth!='Do not center'){
-      logevent('c0003b','Researcher has not chosen center any variables');
-    }
-  }} else revals$init$msvars <- NULL},label='osvar');
-
-## when a-priori contrasts specified, update model... none are specified, revert to the additive model (frm)
-observe({
-  frm<-revals$frm;
-  if(length(frm)>0){
-    if(length(cm<-revals$cm)>0){
-      if(length(cont<-input$cont)>0){
-        ## addterms <- try(paste(gsub(':','*',unique(unlist(sapply(cm[cont],function(ii)
-        ##                                                     attr(cm,'contrinfo')$term[apply(ii[-1,drop=F],2,
-        ##                                                     function(jj) length(unique(jj))>1)],simplify=F)))),collapse="+"));
-        addterms <- try(unique(unlist(sapply(cm[cont],function(ii)
-                                             apply(ii[-1,,drop=F],1,function(jj)
-                                                   colnames(ii)[jj!=0]),simplify=F))));
-        if(class(addterms)[1]=='try-error') {
-          cat('addterms errored out with',class(addterms),'\n');
-          browser();
-        }
-        ## convert the coef-format terms to raw-format (model-format) terms
-        addterms <- subset(attr(cm,'contrinfo'),raw%in%addterms)$term;
-        ## swap out ':' to insure marginality and paste together
-        addterms <- paste(gsub(':','*',addterms),collapse='+');
-        frmcon <- try(update(frm,as.formula(paste(".~.+",addterms))));
-        ## browser();
-        if(class(frmcon)[1]=='try-error') {
-          cat('frmcon errored out with',class(frmcon),'\n');
-          browser()
-        } else {
-          environment(frmcon) <- NULL;
-          cat('update model: ');print(frmcon);
-          ## if necessary, update revals$frmcon
-          if(!isTRUE(all.equal(isolate(revals$frmcon),frmcon))) {
-            revals$frmcon <- frmcon;
-            logevent('c0020',sprintf('Researcher selected "%s" to be a-priori contrasts, so the starting model will be: %s',
-                                     paste(cont,collapse='","'),paste(capture.output(print(frmcon,showEnv=F)),collapse='')));
-          }
-        }
+  ## data
+  refreeze$trndat <- trndat <- isolate(revals$trndat);
+  ## construct the model fitting command
+  mcall <- switch(modeltype,
+                  coxph = sprintf("coxph(%s , data=trndat,na.action=na.exclude)",frmcon.char),
+                  lme = {
+                    rfrm.char <- isolate(revals$rfrm.char);
+                    options('steprand.lmec'=lmec);
+                    sprintf("lme(%s , data=trndat,random=%s , method='ML',control=lmec,na.action=na.exclude)",
+                            frmcon.char,rfrm.char)},
+                  sprintf("lm(%s , data=trndat,na.action=na.exclude)",frmcon.char)
+                  );
+  ## try fitting; the fitstartclean copy is what gets saved, because it won't have unevaluated objects in it
+  fitstartclean <- fitstart <- try(eval(parse(text=mcall)));
+  if(class(fitstart)[1] != 'try-error') {
+    logevent('c0005',paste('The following starting model was fit:',mcall));
+    isolate(reissue[['ic0002']]<-paste('The following starting model was fit:',mcall));    
+    isolate(reissue[['ie0002']]<-NULL);
+  } else {
+    isolate(reissue[['ie0002']]<-'Failed to fit starting model.');
+    isolate(reissue[['ic0002']]<-NULL);
+    logevent('e0001','Failed to fit starting model.');
+    revals$crashed <- 'e0002';
+    if(debugmode) browser();
+    ## someplace here need to dump whatever might be relevant, and send the user a signal
+  };
+  ## If the newly-fitted starting model is different from the previously fitted starting model, then proceed
+  if(length(isolate(refits$fitstart))==0||!isTRUE(all.equal(isolate(refits$fitstart$call),fitstart$call))){
+    ## ...explicitly specify the data so stepAIC and steprand don't get confused
+    fitstart$call$data <- trndat;
+    ## do steprand if applicable, capturing to fitpreaic otherwise...
+    ## DONE?: handle failure of fitpreaic
+    if(class(fitstart)[1]=='lme'&&length(rvars<-isolate(input$rvars))>0){
+      fitpreaic <- try(steprand(fitstart,rvars));
+      if(class(fitpreaic)[1] != 'try-error'){
+        fitpreaicclean <- update(fitpreaic,data=trndat,control=lmec);
+        logevent('c0021',sprintf('The following was found (by likelihood ratios) to result in a better fit than the original random intercept model: %s',
+                                 deparse(fitpreaicclean$call)));
+                                 ## paste(capture.output(update(fitpreaic,data=trndat)$call),collapse='')));
+        isolate(reissue[['ic0003']]<-paste('After considering possible random interactions, the following model was chosen:',
+                                           paste(deparse(fitpreaicclean$call),collapse=' ')));
+                isolate(reissue[['ie0003']]<-NULL);
       } else {
-        revals$frmcon <- frm;
-        logevent('c0020',sprintf('No a-priori contrasts selected so the starting model will be: %s',
-                                 paste(capture.output(print(frm,showEnv=F)),collapse='')));
+        logevent('e0003','Unknown error during random term selection.');
+        isolate(reissue[['ic0003']]<-NULL);
+        isolate(reissue[['ie0003']]<-paste('Error during random term selection:',as.character(fitpreaic)));
+        revals$crashed <- 'e0003';
+        if(debugmode) browser();
       }
+      fitpreaic$call$control <- lmec;
     } else {
-      revals$frmcon <- frm;
-      logevent('c0020',sprintf('There are only numeric explanatory variables, so there are no contrasts and the starting model will be: %s',
-                               paste(capture.output(print(frm,showEnv=F)),collapse='')));
+      isolate(reissue[['ic0003']]<-NULL); isolate(reissue[['ie0003']]<-NULL);
+      fitpreaicclean <- fitpreaic <- fitstart;
     }
-  }},label='ocont');
-
-observe({
-  if(!is.null(input$final)&&input$final!=0){
-    log<-do.call(rbind,isolate(relog$log));
-    fits<-isolate(revals$fits);
-    trndat <- isolate(revals$trndat);
-    revals_list<-isolate(reactiveValuesToList(revals));
-    save(log,lmec,fits,trndat,revals_list,.Random.seed,file=isolate(revals$filepath),compress='xz');
-    revals$downloadready <- T;
-    cat('Saved session!\n');
-  } else revals$downloadready <- F});
-
-
-### model fitting
-## function that fits the model and does other time-consuming stuff when the user presses a button
-observe({
-  if(!is.null(input$model)&&input$model!=0){
-    revals$readyfinal <- F;
-    logevent('c0013',sprintf('Researcher indicated readiness to proceed with analysis. So far %d analyses have been attempted on the same data',input$model-1));
-    modeltype <- isolate(revals$modeltype);
-    frmcon0 <- isolate(revals$frmcon);
-    ## there is a null at the end of frmcon0 because we blew away its environment when creating it
-    frmcon <- paste0(setdiff(capture.output(frmcon0),"NULL"),collapse="");
-    ## frmcon <- paste0(frmcon[seq.int(length(frmcon)-1)],collapse="");
-    trndat <- isolate(revals$trndat);
-    mcall <- switch(modeltype,
-                    coxph = sprintf("coxph(%s , data=trndat,na.action=na.exclude)",frmcon),
-                    lme = {
-                      ## rfrm <- capture.output(isolate(revals$rfrm)); rfrm <-paste0(rfrm[length(rfrm)-1],collapse="");
-                      rfrm.char <- isolate(revals$rfrm.char);
-                      ## lmec<-getOption('steprand.lmec',lmeControl(opt='optim',maxIter=100,msMaxIter=100,niterEM=50,msMaxEval=400));
-                      options('steprand.lmec'=lmec);
-                      sprintf("lme(%s , data=trndat,random=%s , method='ML',control=lmec,na.action=na.exclude)",
-                              frmcon,rfrm.char)},
-                    sprintf("lm(%s , data=trndat,na.action=na.exclude)",frmcon)
-                    );
-    cat('\nfrmcon: '); print(frmcon);
-    logevent('c0014',paste('The following model was fit:',mcall)) 
-    ## cat('mcall: '); print(mcall);
-    fitstart <- try(eval(parse(text=mcall)));
-    ## if(class(fitstart)[1]=='try-error') browser();
-    ## update call and starting model if necessary
-    if(length(isolate(revals$fits$fitstart))==0||!isTRUE(all.equal(isolate(revals$fits$fitstart$call),fitstart$call))){
-      ## ...explicitly specify the data so stepAIC and steprand don't get confused
-      fitstart$call$data <- trndat;
-      ## do steprand if applicable, capturing to fitpreaic otherwise...
-      if(class(fitstart)[1]=='lme'&&length(rvars<-isolate(input$rvars))>0){
-        fitpreaic <- steprand(fitstart,rvars);
-        logevent('c0021',sprintf('The following following was found (by likelihood ratios) to result in a better fit than the original random intercept model: %s',
-                                 paste(capture.output(update(fitpreaic,data=trndat)$call),collapse='')));
-        fitpreaic$call$control <- lmec;
-      } else fitpreaic <- fitstart;
-      ## do stepAIC
-      fitaic <- stepAIC(fitpreaic,trace=F,direction='both',scope=list(lower=.~.,upper=.~(.)^10));
-      ## return the data argument to being a name, so the output is readable
-      fitstart <- update(fitstart,data=trndat); fitpreaic <- update(fitpreaic,data=trndat); fitaic <- update(fitaic,data=trndat);
-      logevent('c0022',sprintf('The (fixed-effect) model selection process returned the following final model: %s',
-                               paste(capture.output(fitaic$call),collapse='')));
-      ## TODO: if lm setNames(lapply(list(fitstart,fitaic),rstudent)[c(1,1,2)],c('start','preaic','aic'));
-      ## else if lme setNames(lapply(list(fitstart,fitpreaic,fitaic),resid,type='pearson'),c('start','preaic','aic'));
-      ## setNames(lapply(list(fitstart,fitpreaic,fitaic),fitted),c('start','preaic','aic'));
-      ## ...then push them up to revals, so each plot doesn't have to calculate them
-      ## update fits as needed
-      if(!isTRUE(all.equal(isolate(revals$fits$fitaic$call),fitaic$call))) revals$fits$fitaic <- fitaic;
-      revals$mcall <- mcall;
-      revals$fits$fitstart <- fitstart;
-      revals$fits$fitpreaic <- fitpreaic;
-      ##  current env gets retained by model, so clean out reactivevalues (which is a duplicate anyway)
-      rm(revals);
-      cat('======\n fitstart: '); print(summary(fitstart));
-      cat('======\n fitpreaic: '); print(summary(fitpreaic));
-      cat('======\n fitaic: '); print(summary(fitaic));
-    };
-  }},label='ofit');
-
-### Observe what the user says about the residuals, etc
-observe({
-  trend<-input$trend; nonlin<-input$nonlin; abstrend<-input$abstrend; absnonlin<-input$absnonlin;
-  qqrdir<-input$qqrdir; qqldir<-input$qqldir; qqrange<-input$qqrange;
-  allresidin<-c(trend,nonlin,abstrend,absnonlin,qqrdir,qqldir);
-  ## cat('allresidin:',paste(allresidin,collapse=','),'\n');
-  ## cat('qqrange:',paste(qqrange,collapse=','),'\n');
-  ## cat('lengths:',length(setdiff(allresidin,' ')),'and',length(qqrange),'\n');
-  modeltype<-isolate(revals$modeltype);
-  ## cat('modeltype:',modeltype,'\n');
-  if(length(modeltype)>0){
-    if(modeltype=='coxph'){
-      revals$readyfinal <- T; logevent('c0040','Researcher examinde all residual plots');
+    ## do stepAIC
+    ## DONE?: handle failure of stepAIC
+    fitaic <- try(stepAIC(fitpreaic,trace=F,direction='both',scope=list(lower=.~.,upper=.~(.)^10)));
+    if(class(fitaic)[1]!='try error'){
+      isolate(reissue[['ic0004']]<- paste('Bidirectional stepwise model search on AIC selected the following final model:',
+                                          paste(deparse((fitaic<-update(fitaic,data=trndat))$call),collapse=' ')));
+      isolate(reissue[['ie0004']]<- NULL);
     } else {
-      ## if not a cox-ph model, these other residual plots are appropriate
-      if(sum(allresidin!=' ',na.rm=T)==6&&length(qqrange)==2){
-        revals$readyfinal <- T;
-        logevent('c0040','Researcher examined all residual plots');
-      } else revals$readyfinal <- F;
-    }} else revals$readyfinal <- F});
+      isolate(reissue[['ic0004']]<- NULL);
+      isolate(reissue[['ie0004']]<- paste('Error during setpAIC:',as.character(fitaic)));
+      revals$crashed <- 'e0004';
+      if(debugmode) browser();
+    }
+    ## return the data argument to being a name, so the output is readable
+    ## fitstart <- update(fitstart,data=trndat); #fitpreaic <- update(fitpreaic,data=trndat); #fitaic <- update(fitaic,data=trndat);
+    ## logevent('c0022',sprintf('The (fixed-effect) model selection process returned the following final model: %s',
+    ##                          paste(capture.output(fitaic$call),collapse='')));
+    if(!isTRUE(all.equal(isolate(refits$fitaic$call),fitaic$call))) refits$fitaic <- fitaic;
+    revals$mcall <- mcall;
+    ## fitstart and fitpreaic have ugly evaluated junk in them, so rather than updating again, use the clean copies we made
+    refits$fitstart <- fitstartclean; refits$fitpreaic <- fitpreaicclean;
+    ## get printable formulas for later; formula wrapped in formula because sometimes they are actually terms
+    ## capture.output might not be necessary
+    revals$formulas_fixed <- paste0(capture.output(print(formula(if(modeltype=='lme') fitaic$call$fixed else {
+      fitaic$call$formula }),showEnv=F)),collapse='');
+    if(modeltype=='lme') revals$formulas_random <- paste0(capture.output(print(formula(fitaic$call$random),showEnv=F)),collapse='');
+    revals$fitted <- fitted(fitaic);
+    revals$resid <- if(modeltype=='lme') residuals(fitaic,type='pearson') else if(modeltype=='lm') rstudent(fitaic) else 0;
+    revals$zph <- zph <- if(modeltype=='coxph') cox.zph(fitaic) else 0;
+    revals$znr<- if(length(zph)>1) nrow(zph$table)-1 else 0;
+    ## upon completion of this analysis we are in stage 3
+    if(is.numeric(stage<-isolate(revals$stage)) && stage < 3) revals$stage <- 3;
+    ## DONE: issues for the calls and formulas
+    ## DONE: issues for cvar&gvar, multiple gvars, multiple tvars, etc
+    revals$latestaction <- 'runanalysis';
+    ## DONE: possibly, put the below updates inside the above enclosure
+    for(ii in c('trend','nonlin','abstrend','absnonlin','qqldir','qqrdir')) updateSelectInput(session,ii,choices=static_choices[[ii]],selected=' ');
+    cat('  updated resid menus\n');
+    updateSliderInput(session,'qqrange',value=c(-.05,.05));
+    cat('  updated qqslider\n');
+    updateSliderInput(session,'zphrange',value=c(.49,.51));
+    cat('  updated zphslider, leaving observe_lastaction\n');
+  }; 
+  ## for(ii in c('trend','nonlin','abstrend','absnonlin','qqldir','qqrdir')) session$sendInputMessage(ii,list(selected=' '));
+  cat('leaving obs_analysis\n');
+},label='obs_analysis');
 
-observe({trend<-input$trend; model<-isolate(input$model);
-         if(length(model)>0&&model>0&&length(trend)>0&&trend!=' '){
-           logevent('w0030',paste('Researcher feels that the trend in the Pearson residuals is best described as "',trend,'"'))}});
+### crash handling
 
-observe({nonlin<-input$nonlin; model<-isolate(input$model);
-         if(length(model)>0&&model>0&&length(nonlin)>0)
-           if(nonlin=='Yes') logevent('w0031','Researcher feels that the trend in the Pearson residuals might be nonlinear')});
+## observe({revals$residsdone;browser()});
 
-observe({
-  abstrend<-input$abstrend; model<-isolate(input$model);
-  if(length(model)>0&&model>0&&length(abstrend)>0&&abstrend!=' ') {
-    logevent('w0032',paste('Researcher feels that the trend in the absolute Pearson residuals is best described as "',abstrend,'"'))}});
+output$badnews <- renderUI(if(length(revals$crashed)>0){
+  revals_list <- isolate(reactiveValuesToList(revals));
+  input_list <- isolate(reactiveValuesToList(input));
+  relog_list <- isolate(reactiveValuesToList(relog));
+  reissue_list <- isolate(reactiveValuesToList(reissue));
+  refits_list <- isolate(reactiveValuesToList(refits));
+  save(revals_list,input_list,relog_list,reissue_list,refits_list,globEnv,file=paste0('www/crash/',fileid<-isolate(revals$fileid),'.rdata'));
+  h3(paste("A crash has occurred, and analysis cannot proceed further. Please contact alex.bokov@gmail.com with a description of what you witnessed and this tracking number:",fileid));
+});
 
-observe({absnonlin<-input$absnonlin; model<-isolate(input$model);
-         if(length(model)>0&&model>0&&length(absnonlin)>0)
-           if(absnonlin=='Yes') logevent('w0031','Researcher feels that the trend in the absolute Pearson residuals might be nonlinear')});
+### logging
+output$log <- renderTable({
+  oo<-do.call(rbind,reactiveValuesToList(relog));
+  oo[order(rownames(oo)),]
+},include.colnames=F,caption.placement='top',caption='Activity Log',label='my label');
 
-observe({qqrdir<-input$qqrdir; model<-isolate(input$model);
-         if(length(model)>0&&model>0&&length(qqrdir)>0)
-           logevent('w0034',paste('Researcher feels that the right tail of the Pearson residuals is',
-                                  switch(qqrdir,Above='larger',Below='smaller'),
-                                  'than would be predicted for a normal distribution'))});
-
-observe({qqldir<-input$qqldir; model<-isolate(input$model);
-         if(length(model)>0&&model>0&&length(qqldir)>0)
-           logevent('w0035',paste('Researcher feels that the left tail of the Pearson residuals is',
-                                  switch(qqldir,Above='smaller',Below='larger'),
-                                  'than would be predicted for a normal distribution'))});
-
-observe({qqrange<-input$qqrange; model<-isolate(input$model);
-         if(length(model)>0&&model>0&&length(qqrange)==2)
-           logevent('w0036',
-                    sprintf(
-                      'Researcher feels that the left and right tails of the Pearson residuals diverge from normality at roughly the %0.1f and %0.1f standard deviations, respectively.',
-                      qqrange[1],qqrange[2]))});
-
-observe(if(!is.null(gvarmulti<-input$gvarmulti)&&gvarmulti) logevent('w0037','This app does not currently support nested random effects, but the researcher indicates that these data do in fact have such a structure.'));
-observe(if(!is.null(tvarmulti<-input$tvarmulti)&&tvarmulti) logevent('w0038','This app does not currently support multiple time variables, but the researcher indicates that these data do in fact have such a structure.'));
+output$issues <- renderTable({
+  oo<-do.call(rbind,reactiveValuesToList(reissue));
+  oo[order(rownames(oo)),,drop=F]
+},include.colnames=F,caption.placement='top',caption='Issues');
