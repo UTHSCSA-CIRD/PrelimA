@@ -14,9 +14,12 @@
 
 modalHelp <- function(id,helptext=""){
   div(id=id,class="modal fade", #`aria-hidden`="true",
-      div(class="modal-header"),
-      div(class="modal-body",helptext),
-      div(class='modal-footer',a(class="close badge badge-inverse",`data-dismiss`="modal","OK")));
+      div(class="modal-content",
+        div(class="modal-header"),
+        div(class="modal-body",helptext),
+        div(class='modal-footer',
+            a(class="close badge badge-inverse",
+              `data-dismiss`="modal","OK"))));
 }
 
 ## source('help.R');

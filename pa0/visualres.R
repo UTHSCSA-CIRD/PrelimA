@@ -1,1 +1,0 @@
-/home/a/dx/bru/R/visualres.R

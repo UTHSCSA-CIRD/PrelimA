@@ -1,18 +1,30 @@
 ## library(compiler);
 ## enableJIT(3); compilePKGS(T);
 ## setCompilerOptions(optimize=3);
-library(bru);
+## bru is the for-myself R library where I used to dump 
+## all my reusable code
+## library(bru);
 library(shiny);
 ##library(shinyIncubator);
 ## the below is used by the smoothed pairs plot in Model & Data
 library(KernSmooth);
 library(psy);
 library(MASS);
+library(nlme)
 library(car);
 library(digest);
 library(datasets);
+library(stringr); # to get str_length()
+library(multcomp); # to get glht() and adjusted()
+library(scales); # to get alpha()
+## here go various local dependencies
 source('unicontr.R');
+source('rgsub.R');
 source('visualres.R');
+source('info.data.frame.R');
+## below should really be a single file or something
+## sorry about ugly hack
+sapply(list.files(pattern = 'unifx'),source);
 
 globEnv<-environment();
 options(digits.secs=100);
